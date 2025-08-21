@@ -447,7 +447,9 @@ export default {
                 inline_keyboard: [
                   [{ text: '📤 Upload Questions', callback_data: 'admin:upload' }],
                   [{ text: '📊 Daily Report', callback_data: 'admin:daily' }],
-                  [{ text: '📈 Monthly Report', callback_data: 'admin:monthly' }]
+                  [{ text: '📈 Monthly Report', callback_data: 'admin:monthly' }],
+                  [{ text: '⏭️ Post Next Now', callback_data: 'admin:postNow' }],
+                  [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }]
                 ]
               };
               
@@ -556,6 +558,20 @@ export default {
             const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
             const report = await formatMonthlyReport(env.STATE, month);
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, report);
+          } else if (data === 'admin:postNow') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Posting next MCQ…');
+            await postNext(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID);
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Posted next MCQ to the group');
+          } else if (data === 'admin:dbstatus') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const indexKey = `idx:${env.TARGET_GROUP_ID}`;
+            const currentIndex = await getJSON<number>(env.STATE, indexKey, 0);
+            const sent = currentIndex;
+            const total = questions.length;
+            const unsent = Math.max(0, total - sent);
+            const msg = `🗄️ DB Status\n\n• Total questions: ${total}\n• Sent: ${sent}\n• Unsent: ${unsent}`;
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, msg);
           }
         }
         
