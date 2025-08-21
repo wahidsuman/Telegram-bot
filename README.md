@@ -107,13 +107,14 @@ curl https://<your-worker>.workers.dev/tick
 
 ### For Admin
 - Send `/start` to access admin panel
-- **Upload Questions**: Send JSON file with question array or JSONL format
+- **Upload Questions**: Send JSON file OR JSON text directly with question array or JSONL format
 - **Daily Report**: Get today's stats with top users
 - **Monthly Report**: Get current month's stats
+- **Smart Question Cycling**: Bot avoids repeating recent questions when possible
 
 ## Question Format
 
-Upload questions as JSON array or JSONL:
+Upload questions as JSON array, JSONL, or direct JSON text message:
 
 ```json
 {
@@ -139,6 +140,7 @@ Upload questions as JSON array or JSONL:
 
 - `questions` - Array of all questions
 - `idx:{chat_id}` - Next question index
+- `recent:{chat_id}` - Recently sent question indices (prevents immediate repetition)
 - `stats:daily:{YYYY-MM-DD}` - Daily statistics
 - `stats:monthly:{YYYY-MM}` - Monthly statistics
 

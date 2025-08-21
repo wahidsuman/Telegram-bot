@@ -183,24 +183,40 @@ async function postNext(kv, token, chatId) {
     return;
   }
   const indexKey = `idx:${chatId}`;
+  const recentKey = `recent:${chatId}`;
   const currentIndex = await getJSON(kv, indexKey, 0);
-  const question = questions[currentIndex];
-  const nextIndex = (currentIndex + 1) % questions.length;
+  const recentQuestions = await getJSON(kv, recentKey, []);
+  let safeIndex = currentIndex % questions.length;
+  if (questions.length > 5) {
+    let attempts = 0;
+    while (recentQuestions.includes(safeIndex) && attempts < questions.length) {
+      safeIndex = (safeIndex + 1) % questions.length;
+      attempts++;
+    }
+  }
+  const question = questions[safeIndex];
+  const nextIndex = (safeIndex + 1) % questions.length;
+  const updatedRecent = [safeIndex, ...recentQuestions.filter((idx) => idx !== safeIndex)].slice(0, Math.min(5, Math.floor(questions.length / 2)));
   await putJSON(kv, indexKey, nextIndex);
-  const text = `\u{1F9E0} Hourly MCQ #${currentIndex + 1}
+  await putJSON(kv, recentKey, updatedRecent);
+  const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+  const questionId = `${safeIndex}_${Date.now()}`;
+  const text = `\u{1F9E0} Hourly MCQ #${safeIndex + 1}
 
 ${esc(question.question)}
 
 A) ${esc(question.options.A)}
 B) ${esc(question.options.B)}
 C) ${esc(question.options.C)}
-D) ${esc(question.options.D)}`;
+D) ${esc(question.options.D)}
+
+\u23F0 Posted: ${timestamp.split("T")[1].split(".")[0]} UTC`;
   const keyboard = {
     inline_keyboard: [[
-      { text: "A", callback_data: `ans:${currentIndex}:A` },
-      { text: "B", callback_data: `ans:${currentIndex}:B` },
-      { text: "C", callback_data: `ans:${currentIndex}:C` },
-      { text: "D", callback_data: `ans:${currentIndex}:D` }
+      { text: "A", callback_data: `ans:${questionId}:A` },
+      { text: "B", callback_data: `ans:${questionId}:B` },
+      { text: "C", callback_data: `ans:${questionId}:C` },
+      { text: "D", callback_data: `ans:${questionId}:D` }
     ]]
   };
   await sendMessage(token, chatId, text, { reply_markup: keyboard });
@@ -224,12 +240,7 @@ function trimQuestion(q) {
   };
 }
 __name(trimQuestion, "trimQuestion");
-async function uploadQuestionsFromFile(kv, token, fileId, targetGroupId) {
-  const fileInfo = await getFile(token, fileId);
-  if (!fileInfo.ok) {
-    throw new Error("Failed to get file info");
-  }
-  const content = await downloadFile(token, fileInfo.result.file_path);
+async function uploadQuestionsFromText(kv, content, targetGroupId) {
   let newQuestions = [];
   try {
     const parsed = JSON.parse(content);
@@ -269,6 +280,15 @@ async function uploadQuestionsFromFile(kv, token, fileId, targetGroupId) {
     sent: currentIndex,
     unsent: Math.max(0, allQuestions.length - currentIndex)
   };
+}
+__name(uploadQuestionsFromText, "uploadQuestionsFromText");
+async function uploadQuestionsFromFile(kv, token, fileId, targetGroupId) {
+  const fileInfo = await getFile(token, fileId);
+  if (!fileInfo.ok) {
+    throw new Error("Failed to get file info");
+  }
+  const content = await downloadFile(token, fileInfo.result.file_path);
+  return await uploadQuestionsFromText(kv, content, targetGroupId);
 }
 __name(uploadQuestionsFromFile, "uploadQuestionsFromFile");
 async function formatDailyReport(kv, date) {
@@ -362,12 +382,36 @@ var worker_default = {
 \u{1F4CA} Database Status:
 \u2022 Total questions in database: ${result.total}
 \u2022 Questions already sent: ${result.sent}
-\u2022 Questions remaining unsent: ${result.unsent}`;
+\u2022 Questions remaining unsent: ${result.unsent}
+
+\u{1F4A1} Tip: You can also send JSON text directly (no file needed)!`;
                 console.log("Sending response to admin:", responseMessage);
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, responseMessage);
               } catch (error) {
                 console.error("File upload error:", error);
                 const errorMessage = `\u274C Error uploading questions: ${error instanceof Error ? error.message : "Unknown error"}`;
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, errorMessage);
+              }
+            } else if (message.text && message.text !== "/start") {
+              try {
+                console.log("Processing JSON text from admin:", chatId);
+                const result = await uploadQuestionsFromText(env.STATE, message.text, env.TARGET_GROUP_ID);
+                const responseMessage = `\u2705 Successfully uploaded ${result.uploaded} questions from text!
+
+\u{1F4CA} Database Status:
+\u2022 Total questions in database: ${result.total}
+\u2022 Questions already sent: ${result.sent}
+\u2022 Questions remaining unsent: ${result.unsent}
+
+\u{1F504} Next question will be #${result.sent + 1}`;
+                console.log("Sending response to admin:", responseMessage);
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, responseMessage);
+              } catch (error) {
+                console.error("JSON text upload error:", error);
+                const errorMessage = `\u274C Error uploading questions from text: ${error instanceof Error ? error.message : "Unknown error"}
+
+\u{1F4A1} Make sure to send valid JSON format:
+[{"question":"...", "options":{"A":"...", "B":"...", "C":"...", "D":"..."}, "answer":"A", "explanation":"..."}]`;
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, errorMessage);
               }
             }
@@ -392,7 +436,7 @@ var worker_default = {
           const chatId = query.message?.chat.id;
           if (data.startsWith("ans:")) {
             const [, qidStr, answer] = data.split(":");
-            const qid = parseInt(qidStr);
+            const qid = parseInt(qidStr.split("_")[0]);
             const questions = await getJSON(env.STATE, "questions", []);
             if (qid >= 0 && qid < questions.length) {
               const question = questions[qid];
@@ -455,7 +499,7 @@ Ready to negotiate discount!`;
             await sendMessage(
               env.TELEGRAM_BOT_TOKEN,
               chatId,
-              "Please send a JSON file with questions. Format should be an array of objects or JSONL (one object per line)."
+              '\u{1F4E4} Upload Questions\n\nYou can upload questions in two ways:\n\n1\uFE0F\u20E3 **JSON File**: Send a .json file\n2\uFE0F\u20E3 **JSON Text**: Send JSON directly as a message\n\nFormat: Array of objects or JSONL (one object per line)\n\nExample:\n[{"question":"What is 2+2?", "options":{"A":"3", "B":"4", "C":"5", "D":"6"}, "answer":"B", "explanation":"2+2=4"}]'
             );
           } else if (data === "admin:daily") {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
