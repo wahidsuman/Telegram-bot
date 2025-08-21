@@ -377,7 +377,7 @@ function parseAdminTemplate(text: string): { question: string; options: { A: str
   return candidate;
 }
 
-async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: string, targetGroupId: string): Promise<{ uploaded: number; total: number; sent: number; unsent: number }> {
+async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: string, targetGroupId: string): Promise<{ uploaded: number; total: number; sent: number; unsent: number; skippedThisTime: number; skippedTotal: number }> {
   const fileInfo = await getFile(token, fileId);
   
   if (!fileInfo.ok) {
@@ -504,6 +504,11 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
   }
   const allQuestions = [...existingQuestions, ...uniqueNew];
   await putJSON(kv, 'questions', allQuestions);
+  const skippedThisTime = Math.max(0, validQuestions.length - uniqueNew.length);
+  const dupTotalKey = 'stats:duplicates_skipped_total';
+  const prevDupTotal = await getJSON<number>(kv, dupTotalKey, 0 as unknown as number);
+  const skippedTotal = (typeof prevDupTotal === 'number' ? prevDupTotal : 0) + skippedThisTime;
+  await putJSON(kv, dupTotalKey, skippedTotal);
   
   // Get current index to calculate sent vs unsent
   const indexKey = `idx:${targetGroupId}`;
@@ -513,7 +518,9 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
     uploaded: uniqueNew.length,
     total: allQuestions.length,
     sent: currentIndex,
-    unsent: Math.max(0, allQuestions.length - currentIndex)
+    unsent: Math.max(0, allQuestions.length - currentIndex),
+    skippedThisTime,
+    skippedTotal
   };
 }
 
@@ -675,7 +682,7 @@ export default {
                 console.log('Processing file upload from admin:', chatId);
                 const result = await uploadQuestionsFromFile(env.STATE, env.TELEGRAM_BOT_TOKEN, message.document.file_id, env.TARGET_GROUP_ID);
                 
-                const responseMessage = `✅ Upload Summary\n\n• Uploaded this time: ${result.uploaded}\n• Remaining to post: ${result.unsent}\n• Posted till now: ${result.sent}\n• Total in database: ${result.total}\n\n(duplicates are automatically skipped)`;
+                const responseMessage = `✅ Upload Summary\n\n• Uploaded this time: ${result.uploaded}\n• Skipped duplicates (this time): ${result.skippedThisTime}\n• Skipped duplicates (total): ${result.skippedTotal}\n• Remaining to post: ${result.unsent}\n• Posted till now: ${result.sent}\n• Total in database: ${result.total}`;
                 
                 console.log('Sending response to admin:', responseMessage);
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, responseMessage);
