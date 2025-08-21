@@ -135,6 +135,22 @@ async function sendMessage(token: string, chatId: string | number, text: string,
   return response.json();
 }
 
+async function copyMessage(token: string, fromChatId: string | number, messageId: number, targetChatId: string | number, options?: any): Promise<any> {
+  const url = `https://api.telegram.org/bot${token}/copyMessage`;
+  const body = {
+    from_chat_id: fromChatId,
+    chat_id: targetChatId,
+    message_id: messageId,
+    ...options
+  };
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  return response.json();
+}
+
 async function answerCallbackQuery(token: string, queryId: string, text?: string, showAlert?: boolean): Promise<any> {
   const url = `https://api.telegram.org/bot${token}/answerCallbackQuery`;
   const body = {
@@ -304,6 +320,10 @@ function trimQuestion(q: any): Question {
   };
 }
 
+function formatQuestionPreview(q: Question, index: number): string {
+  return `#${index + 1}\n\n${esc(q.question)}\n\nA) ${esc(q.options.A)}\nB) ${esc(q.options.B)}\nC) ${esc(q.options.C)}\nD) ${esc(q.options.D)}\n\nAnswer: ${q.answer}`;
+}
+
 async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: string, targetGroupId: string): Promise<{ uploaded: number; total: number; sent: number; unsent: number }> {
   const fileInfo = await getFile(token, fileId);
   
@@ -442,14 +462,50 @@ export default {
           
           if (chatId.toString() === env.ADMIN_CHAT_ID) {
             // Admin commands
-            if (message.text === '/start') {
+            const broadcastPending = await env.STATE.get('admin:broadcast:pending');
+            const editIdxStr = await env.STATE.get('admin:edit:idx');
+            if (broadcastPending === '1') {
+              try {
+                await copyMessage(env.TELEGRAM_BOT_TOKEN, chatId, message.message_id, env.TARGET_GROUP_ID);
+                await env.STATE.delete('admin:broadcast:pending');
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ Broadcasted to group');
+              } catch (error) {
+                await env.STATE.delete('admin:broadcast:pending');
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Broadcast failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              }
+            } else if (editIdxStr) {
+              try {
+                if (!message.text) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ Please send the updated question as JSON text.');
+                } else {
+                  const idx = parseInt(editIdxStr, 10);
+                  const q = JSON.parse(message.text);
+                  if (!validateQuestion(q)) {
+                    throw new Error('Invalid question format. Expecting {question, options{A,B,C,D}, answer, explanation}');
+                  }
+                  const trimmed = trimQuestion(q);
+                  const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+                  if (idx < 0 || idx >= list.length) {
+                    throw new Error('Index out of range');
+                  }
+                  list[idx] = trimmed;
+                  await putJSON(env.STATE, 'questions', list);
+                  await env.STATE.delete('admin:edit:idx');
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Question #${idx + 1} updated.`);
+                }
+              } catch (error) {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Edit failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              }
+            } else if (message.text === '/start') {
               const keyboard = {
                 inline_keyboard: [
                   [{ text: '📤 Upload Questions', callback_data: 'admin:upload' }],
                   [{ text: '📊 Daily Report', callback_data: 'admin:daily' }],
                   [{ text: '📈 Monthly Report', callback_data: 'admin:monthly' }],
                   [{ text: '⏭️ Post Next Now', callback_data: 'admin:postNow' }],
-                  [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }]
+                  [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
+                  [{ text: '📣 Broadcast to Group', callback_data: 'admin:broadcast' }],
+                  [{ text: '🛠️ Manage Questions', callback_data: 'admin:manage' }]
                 ]
               };
               
@@ -572,6 +628,85 @@ export default {
             const unsent = Math.max(0, total - sent);
             const msg = `🗄️ DB Status\n\n• Total questions: ${total}\n• Sent: ${sent}\n• Unsent: ${unsent}`;
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, msg);
+          } else if (data === 'admin:broadcast') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            await env.STATE.put('admin:broadcast:pending', '1');
+            const kb = { inline_keyboard: [[{ text: '✖️ Cancel', callback_data: 'admin:broadcastCancel' }]] };
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Send the message or media to broadcast to the group.', { reply_markup: kb });
+          } else if (data === 'admin:broadcastCancel') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
+            await env.STATE.delete('admin:broadcast:pending');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❎ Broadcast cancelled');
+          } else if (data === 'admin:manage') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            if (questions.length === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions in database.');
+            } else {
+              await env.STATE.put('admin:manage:index', '0');
+              const txt = formatQuestionPreview(questions[0], 0);
+              const kb = { inline_keyboard: [[
+                { text: '⬅️ Prev', callback_data: 'admin:mg:prev' },
+                { text: '➡️ Next', callback_data: 'admin:mg:next' }
+              ], [
+                { text: '📝 Edit', callback_data: 'admin:edit:0' },
+                { text: '🗑️ Delete', callback_data: 'admin:del:0' }
+              ], [
+                { text: '✖️ Close', callback_data: 'admin:mg:close' }
+              ]] };
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, txt, { reply_markup: kb });
+            }
+          } else if (data === 'admin:mg:close') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Closed');
+            await env.STATE.delete('admin:manage:index');
+          } else if (data === 'admin:mg:prev' || data === 'admin:mg:next') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            if (questions.length === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions in database.');
+            } else {
+              const idxStr = (await env.STATE.get('admin:manage:index')) || '0';
+              let idx = parseInt(idxStr, 10) || 0;
+              if (data === 'admin:mg:next') idx = (idx + 1) % questions.length;
+              if (data === 'admin:mg:prev') idx = (idx - 1 + questions.length) % questions.length;
+              await env.STATE.put('admin:manage:index', String(idx));
+              const txt = formatQuestionPreview(questions[idx], idx);
+              const kb = { inline_keyboard: [[
+                { text: '⬅️ Prev', callback_data: 'admin:mg:prev' },
+                { text: '➡️ Next', callback_data: 'admin:mg:next' }
+              ], [
+                { text: '📝 Edit', callback_data: `admin:edit:${idx}` },
+                { text: '🗑️ Delete', callback_data: `admin:del:${idx}` }
+              ], [
+                { text: '✖️ Close', callback_data: 'admin:mg:close' }
+              ]] };
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, txt, { reply_markup: kb });
+            }
+          } else if (data.startsWith('admin:del:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const parts = data.split(':');
+            const idx = parseInt(parts[2], 10);
+            const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+            if (idx >= 0 && idx < list.length) {
+              list.splice(idx, 1);
+              await putJSON(env.STATE, 'questions', list);
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `🗑️ Deleted question #${idx + 1}. Remaining: ${list.length}`);
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Invalid index');
+            }
+          } else if (data.startsWith('admin:edit:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const parts = data.split(':');
+            const idx = parseInt(parts[2], 10);
+            await env.STATE.put('admin:edit:idx', String(idx));
+            const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+            if (idx >= 0 && idx < list.length) {
+              const current = list[idx];
+              const example = JSON.stringify(current, null, 2);
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `Send updated question as JSON for #${idx + 1} like:\n\n<pre>${esc(example)}</pre>`);
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Invalid index');
+            }
           }
         }
         
