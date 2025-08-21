@@ -724,7 +724,8 @@ export default {
               }
               
               const resultText = isCorrect ? '✅ Correct!' : '❌ Wrong!';
-              const popup = `${resultText}\n\n${explanation}\n\n(to know more prepladder Discounts text me)`;
+              const correctAnswer = `\n\n🎯 Correct Answer: ${question.answer}) ${question.options[question.answer]}`;
+              const popup = `${resultText}${correctAnswer}\n\n${explanation}\n\n(to know more prepladder Discounts text me)`;
               
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popup, true);
             } else {

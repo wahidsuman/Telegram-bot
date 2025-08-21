@@ -589,7 +589,10 @@ var worker_default = {
                 explanation = explanation.substring(0, 120) + "...";
               }
               const resultText = isCorrect ? "\u2705 Correct!" : "\u274C Wrong!";
-              const popup = `${resultText}
+              const correctAnswer = `
+
+\u{1F3AF} Correct Answer: ${question.answer}) ${question.options[question.answer]}`;
+              const popup = `${resultText}${correctAnswer}
 
 ${explanation}
 
