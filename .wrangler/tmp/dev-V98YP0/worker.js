@@ -199,7 +199,14 @@ async function postNext(kv, token, chatId) {
   const updatedRecent = [safeIndex, ...recentQuestions.filter((idx) => idx !== safeIndex)].slice(0, Math.min(5, Math.floor(questions.length / 2)));
   await putJSON(kv, indexKey, nextIndex);
   await putJSON(kv, recentKey, updatedRecent);
-  const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+  const now = /* @__PURE__ */ new Date();
+  const indianTime = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true
+  }).format(now);
   const questionId = `${safeIndex}_${Date.now()}`;
   const text = `\u{1F9E0} Hourly MCQ #${safeIndex + 1}
 
@@ -210,7 +217,7 @@ B) ${esc(question.options.B)}
 C) ${esc(question.options.C)}
 D) ${esc(question.options.D)}
 
-\u23F0 Posted: ${timestamp.split("T")[1].split(".")[0]} UTC`;
+\u23F0 Posted: ${indianTime} IST`;
   const keyboard = {
     inline_keyboard: [[
       { text: "A", callback_data: `ans:${questionId}:A` },

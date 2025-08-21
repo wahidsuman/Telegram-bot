@@ -293,10 +293,17 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
   await putJSON(kv, recentKey, updatedRecent);
   
   // Add timestamp and question ID to make each question unique
-  const timestamp = new Date().toISOString();
+  const now = new Date();
+  const indianTime = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  }).format(now);
   const questionId = `${safeIndex}_${Date.now()}`;
   
-  const text = `🧠 Hourly MCQ #${safeIndex + 1}\n\n${esc(question.question)}\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}\n\n⏰ Posted: ${timestamp.split('T')[1].split('.')[0]} UTC`;
+  const text = `🧠 Hourly MCQ #${safeIndex + 1}\n\n${esc(question.question)}\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}\n\n⏰ Posted: ${indianTime} IST`;
   
   const keyboard = {
     inline_keyboard: [[
