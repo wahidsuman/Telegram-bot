@@ -603,6 +603,17 @@ export default {
             // Admin commands
             const broadcastPending = await env.STATE.get('admin:broadcast:pending');
             const editIdxStr = await env.STATE.get('admin:edit:idx');
+            const replyPendingUser = await env.STATE.get('admin:reply:pending');
+            if (replyPendingUser) {
+              try {
+                await copyMessage(env.TELEGRAM_BOT_TOKEN, chatId, message.message_id, replyPendingUser);
+                await env.STATE.delete('admin:reply:pending');
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Replied to user ${replyPendingUser}`);
+                return new Response('OK');
+              } catch (e) {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ Failed to forward reply.');
+              }
+            }
             if (broadcastPending === '1') {
               try {
                 await copyMessage(env.TELEGRAM_BOT_TOKEN, chatId, message.message_id, env.TARGET_GROUP_ID);
@@ -706,6 +717,19 @@ export default {
               'Here For Best Prepladder Discount Coupon? Click Below -', 
               { reply_markup: keyboard });
           }
+          // Admin command: /msg <userId> <text>
+          if (chatId.toString() === env.ADMIN_CHAT_ID && message.text && message.text.startsWith('/msg ')) {
+            const rest = message.text.slice(5).trim();
+            const sp = rest.indexOf(' ');
+            if (sp > 0) {
+              const uid = rest.slice(0, sp);
+              const text = rest.slice(sp + 1);
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, uid, text);
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ Message sent');
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Usage: /msg <userId> <text>');
+            }
+          }
         } else if (update.callback_query) {
           const query = update.callback_query;
           const data = query.data || '';
@@ -750,7 +774,9 @@ export default {
             const userName = `${query.from.first_name}${query.from.last_name ? ' ' + query.from.last_name : ''}`;
             const username = query.from.username ? `@${query.from.username}` : '—';
             await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, 
-              `💰 Code Used: P650\n\nUser: ${userName}\nUsername: ${username}\nUser ID: ${userId}\n\nUser has copied the discount code!`);
+              `💰 Code Used: P650\n\nUser: ${userName}\nUsername: ${username}\nUser ID: ${userId}\n\nUser has copied the discount code!`,
+              { reply_markup: { inline_keyboard: [[{ text: '↩️ Reply to user', callback_data: `admin:reply:${userId}` }]] } }
+            );
               
           } else if (data === 'coupon:bargain') {
             // Show full styled text as popup; trim to keep within Telegram popup limits
@@ -765,7 +791,9 @@ export default {
             const username = query.from.username ? `@${query.from.username}` : '—';
             
             const bargainMsg = `🤝 Bargain Request\n\nUser: ${userName}\nUsername: ${username}\nUser ID: ${userId}\n\nReady to negotiate discount!`;
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, bargainMsg);
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, bargainMsg,
+              { reply_markup: { inline_keyboard: [[{ text: '↩️ Reply to user', callback_data: `admin:reply:${userId}` }]] } }
+            );
             
           } else if (data === 'admin:upload') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
@@ -802,6 +830,16 @@ export default {
             await env.STATE.put('admin:broadcast:pending', '1');
             const kb = { inline_keyboard: [[{ text: '✖️ Cancel', callback_data: 'admin:broadcastCancel' }]] };
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Send the message or media to broadcast to the group.', { reply_markup: kb });
+          } else if (data.startsWith('admin:reply:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const targetUserId = data.split(':')[2];
+            await env.STATE.put('admin:reply:pending', targetUserId);
+            const kb = { inline_keyboard: [[{ text: '✖️ Cancel', callback_data: 'admin:replyCancel' }]] };
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `Reply mode enabled for user ${targetUserId}. Send your message or media.`, { reply_markup: kb });
+          } else if (data === 'admin:replyCancel') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
+            await env.STATE.delete('admin:reply:pending');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❎ Reply cancelled');
           } else if (data === 'admin:broadcastCancel') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
             await env.STATE.delete('admin:broadcast:pending');
