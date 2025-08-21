@@ -579,15 +579,14 @@ export default {
               
               await incrementStats(env.STATE, userId, isCorrect, env.TZ || 'Asia/Kolkata');
               
-              // Create popup with correct/wrong, explanation, and discount message
+              // Create popup in requested format
               let explanation = question.explanation;
               if (explanation.length > 120) {
                 explanation = explanation.substring(0, 120) + '...';
               }
-              
-              const resultText = isCorrect ? '✅ Correct!' : '❌ Wrong!';
-              const popup = `${resultText}\n\n${explanation}\n\n(to know more prepladder Discounts text me)`;
-              
+              const verdict = isCorrect ? '✓correct' : '×wrong';
+              const answerLine = `Answer: ${question.answer}`;
+              const popup = `${verdict}\n\n${answerLine}\nExplanation: ${explanation}\n\n(to get Prepladder Discounts text me)`;
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popup, true);
             } else {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question not found', true);
