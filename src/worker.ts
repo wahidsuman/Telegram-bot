@@ -537,7 +537,7 @@ export default {
                 console.log('Processing file upload from admin:', chatId);
                 const result = await uploadQuestionsFromFile(env.STATE, env.TELEGRAM_BOT_TOKEN, message.document.file_id, env.TARGET_GROUP_ID);
                 
-                const responseMessage = `✅ Successfully uploaded ${result.uploaded} questions!\n\n📊 Database Status:\n• Total questions in database: ${result.total}\n• Questions already sent: ${result.sent}\n• Questions remaining unsent: ${result.unsent}`;
+                const responseMessage = `✅ Upload Summary\n\n• Uploaded this time: ${result.uploaded}\n• Remaining to post: ${result.unsent}\n• Posted till now: ${result.sent}\n• Total in database: ${result.total}`;
                 
                 console.log('Sending response to admin:', responseMessage);
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, responseMessage);
