@@ -608,8 +608,11 @@ export default {
               `💰 Code Used: P650\n\nUser: ${userName}\nUsername: ${username}\nUser ID: ${userId}\n\nUser has copied the discount code!`);
               
           } else if (data === 'coupon:bargain') {
-            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 
-              'Stay Still Admin Will reply shortly, be ready with your bargaining skills…😆😆😆', true);
+            // Show a short alert (Telegram popup has tight length limit)
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '🛑 Hold your horses!', true);
+            // Send the full, styled message in chat
+            const bargainCopy = '🛑 Hold your horses!\nThe Admin is suiting up to face your legendary bargaining skills 🥷💰\nSharpen your words, polish your charm… because this is gonna be\nTHE ULTIMATE DISCOUNT SHOWDOWN! ⚔️😂';
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, bargainCopy);
             
             // Notify admin
             const userName = `${query.from.first_name}${query.from.last_name ? ' ' + query.from.last_name : ''}`;
