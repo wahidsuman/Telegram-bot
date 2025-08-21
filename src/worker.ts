@@ -792,17 +792,32 @@ export default {
                   '❌ Please send a valid WhatsApp number.\n\nFormat: Any valid phone number\n\nExamples: 9876543210, +919876543210, 919876543210');
               }
             } else {
-              // Regular non-admin private message
-              const keyboard = {
-                inline_keyboard: [
-                  [{ text: 'Get Code', callback_data: 'coupon:copy' }],
-                  [{ text: 'Bargain', callback_data: 'coupon:bargain' }]
-                ]
-              };
-              
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
-                'Here For Best Prepladder Discount Coupon? Click Below -', 
-                { reply_markup: keyboard });
+              // Check if user is asking for bargain via text
+              const text = message.text?.toLowerCase().trim();
+              if (text && (text.includes('bargain') || text.includes('discount') || text.includes('offer') || text.includes('deal'))) {
+                // User is asking for bargain via text
+                const userName = `${message.from?.first_name}${message.from?.last_name ? ' ' + message.from.last_name : ''}`;
+                const username = message.from?.username ? `@${message.from.username}` : '—';
+                
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                  '💬 Got it! Admin will contact you soon for bargaining. You can also click the "Bargain" button below to provide your WhatsApp number for faster response. 🕐');
+                
+                // Notify admin about text-based bargain request
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, 
+                  `💬 Text Bargain Request\n\nUser: ${userName}\nUsername: ${username}\nUser ID: ${userId}\nMessage: "${message.text}"\n\nUser asked for bargain via text!`);
+              } else {
+                // Regular non-admin private message
+                const keyboard = {
+                  inline_keyboard: [
+                    [{ text: 'Get Code', callback_data: 'coupon:copy' }],
+                    [{ text: 'Bargain', callback_data: 'coupon:bargain' }]
+                  ]
+                };
+                
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                  'Here For Best Prepladder Discount Coupon? Click Below -', 
+                  { reply_markup: keyboard });
+              }
             }
           }
           // Admin command: /msg <userId> <text>
