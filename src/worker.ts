@@ -353,27 +353,69 @@ function buildQuestionKey(q: Question): string {
 function parseAdminTemplate(text: string): { question: string; options: { A: string; B: string; C: string; D: string }; explanation: string; answer?: 'A' | 'B' | 'C' | 'D' } | null {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const data: Record<string, string> = {};
+  
+  // Handle both formats:
+  // 1. Question=, A=, B=, C=, D=, Answer=, Explanation=
+  // 2. Question 1, A =, B =, C =, D =, Answer =, Explanation =
+  
   for (const line of lines) {
-    const m = line.match(/^([A-Za-z]+)\s*=\s*(.*)$/);
-    if (!m) continue;
-    const key = m[1].toLowerCase();
-    const value = m[2].trim();
-    data[key] = (data[key] ? data[key] + '\n' : '') + value;
+    // Try format 1: key=value
+    let m = line.match(/^([A-Za-z]+)\s*=\s*(.*)$/);
+    if (m) {
+      const key = m[1].toLowerCase();
+      const value = m[2].trim();
+      data[key] = (data[key] ? data[key] + '\n' : '') + value;
+      continue;
+    }
+    
+    // Try format 2: key = value (with spaces around =)
+    m = line.match(/^([A-Za-z]+)\s*=\s*(.*)$/);
+    if (m) {
+      const key = m[1].toLowerCase();
+      const value = m[2].trim();
+      data[key] = (data[key] ? data[key] + '\n' : '') + value;
+      continue;
+    }
+    
+    // Try format 3: Question 1, Question 2, etc. (numbered questions)
+    m = line.match(/^Question\s+\d+\s*(.*)$/i);
+    if (m) {
+      const value = m[1].trim();
+      if (value) {
+        data['question'] = (data['question'] ? data['question'] + '\n' : '') + value;
+      }
+      continue;
+    }
+    
+    // Try format 4: Just "Question" without number
+    m = line.match(/^Question\s*(.*)$/i);
+    if (m) {
+      const value = m[1].trim();
+      if (value) {
+        data['question'] = (data['question'] ? data['question'] + '\n' : '') + value;
+      }
+      continue;
+    }
   }
+  
+  // Check if we have all required fields
   if (!data['question'] || !data['a'] || !data['b'] || !data['c'] || !data['d'] || !data['explanation']) {
     return null;
   }
+  
   const candidate: any = {
     question: data['question'],
     options: { A: data['a'], B: data['b'], C: data['c'], D: data['d'] },
     explanation: data['explanation']
   };
+  
   if (data['answer']) {
     const ans = (data['answer'].trim().toUpperCase());
     if (['A','B','C','D'].includes(ans)) {
       candidate.answer = ans;
     }
   }
+  
   return candidate;
 }
 
@@ -686,6 +728,27 @@ export default {
                     await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ Question added to database.');
                   }
                 }
+              } else {
+                // Send helpful message when parsing fails
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                  '❌ Could not parse question format.\n\n' +
+                  'Please use one of these formats:\n\n' +
+                  'Format 1:\n' +
+                  'Question=Your question here\n' +
+                  'A=Option A\n' +
+                  'B=Option B\n' +
+                  'C=Option C\n' +
+                  'D=Option D\n' +
+                  'Answer=A\n' +
+                  'Explanation=Your explanation\n\n' +
+                  'Format 2:\n' +
+                  'Question 1\n' +
+                  'A = Option A\n' +
+                  'B = Option B\n' +
+                  'C = Option C\n' +
+                  'D = Option D\n' +
+                  'Answer = A\n' +
+                  'Explanation = Your explanation');
               }
             } else if (message.document) {
               // Handle file upload - ensure we respond to admin
