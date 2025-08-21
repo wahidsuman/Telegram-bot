@@ -347,6 +347,94 @@ async function formatMonthlyReport(kv, yyyyMM) {
   return report;
 }
 __name(formatMonthlyReport, "formatMonthlyReport");
+async function formatQuestionsList(kv, page = 0, pageSize = 5) {
+  const questions = await getJSON(kv, "questions", []);
+  if (questions.length === 0) {
+    return { text: "\u{1F4DD} No questions in database yet.", hasMore: false, totalPages: 0 };
+  }
+  const totalPages = Math.ceil(questions.length / pageSize);
+  const startIdx = page * pageSize;
+  const endIdx = Math.min(startIdx + pageSize, questions.length);
+  const pageQuestions = questions.slice(startIdx, endIdx);
+  let text = `\u{1F4DA} Questions Database (Page ${page + 1}/${totalPages})
+`;
+  text += `Total: ${questions.length} questions
+
+`;
+  for (let i = 0; i < pageQuestions.length; i++) {
+    const globalIdx = startIdx + i;
+    const q = pageQuestions[i];
+    const shortQuestion = q.question.length > 60 ? q.question.substring(0, 60) + "..." : q.question;
+    text += `${globalIdx + 1}. ${shortQuestion}
+`;
+    text += `   Answer: ${q.answer}) ${q.options[q.answer]}
+
+`;
+  }
+  return {
+    text,
+    hasMore: endIdx < questions.length,
+    totalPages
+  };
+}
+__name(formatQuestionsList, "formatQuestionsList");
+async function deleteQuestion(kv, questionIndex, targetGroupId) {
+  const questions = await getJSON(kv, "questions", []);
+  if (questionIndex < 0 || questionIndex >= questions.length) {
+    return { success: false, message: "Invalid question index" };
+  }
+  const deletedQuestion = questions[questionIndex];
+  questions.splice(questionIndex, 1);
+  await putJSON(kv, "questions", questions);
+  const indexKey = `idx:${targetGroupId}`;
+  const currentIndex = await getJSON(kv, indexKey, 0);
+  if (currentIndex > questions.length) {
+    await putJSON(kv, indexKey, questions.length > 0 ? 0 : 0);
+  }
+  const recentKey = `recent:${targetGroupId}`;
+  await putJSON(kv, recentKey, []);
+  const shortQuestion = deletedQuestion.question.length > 50 ? deletedQuestion.question.substring(0, 50) + "..." : deletedQuestion.question;
+  return {
+    success: true,
+    message: `\u2705 Deleted question #${questionIndex + 1}: "${shortQuestion}"
+
+\u{1F4CA} ${questions.length} questions remaining in database.`
+  };
+}
+__name(deleteQuestion, "deleteQuestion");
+async function sendToGroup(token, groupId, message) {
+  if (message.text) {
+    await sendMessage(token, groupId, `\u{1F4E2} Admin Message:
+
+${message.text}`);
+  } else if (message.photo && message.photo.length > 0) {
+    const photo = message.photo[message.photo.length - 1];
+    const url = `https://api.telegram.org/bot${token}/sendPhoto`;
+    const body = {
+      chat_id: groupId,
+      photo: photo.file_id,
+      caption: message.text ? `\u{1F4E2} Admin: ${message.text}` : "\u{1F4E2} Photo from admin"
+    };
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  } else if (message.document) {
+    const url = `https://api.telegram.org/bot${token}/sendDocument`;
+    const body = {
+      chat_id: groupId,
+      document: message.document.file_id,
+      caption: message.text ? `\u{1F4E2} Admin: ${message.text}` : "\u{1F4E2} Document from admin"
+    };
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  }
+}
+__name(sendToGroup, "sendToGroup");
 var worker_default = {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -365,19 +453,32 @@ var worker_default = {
           const userId = message.from?.id;
           if (chatId.toString() === env.ADMIN_CHAT_ID) {
             if (message.text === "/start") {
+              await putJSON(env.STATE, `admin_state:${chatId}`, { mode: "normal" });
               const keyboard = {
                 inline_keyboard: [
                   [{ text: "\u{1F4E4} Upload Questions", callback_data: "admin:upload" }],
+                  [{ text: "\u{1F4DA} Manage Questions", callback_data: "admin:manage" }],
+                  [{ text: "\u{1F4E2} Send to Group", callback_data: "admin:send" }],
                   [{ text: "\u{1F4CA} Daily Report", callback_data: "admin:daily" }],
                   [{ text: "\u{1F4C8} Monthly Report", callback_data: "admin:monthly" }]
                 ]
               };
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, "Admin Panel", { reply_markup: keyboard });
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, "\u{1F916} Admin Panel\n\nChoose an action:", { reply_markup: keyboard });
             } else if (message.document) {
-              try {
-                console.log("Processing file upload from admin:", chatId);
-                const result = await uploadQuestionsFromFile(env.STATE, env.TELEGRAM_BOT_TOKEN, message.document.file_id, env.TARGET_GROUP_ID);
-                const responseMessage = `\u2705 Successfully uploaded ${result.uploaded} questions!
+              const adminState = await getJSON(env.STATE, `admin_state:${chatId}`, { mode: "normal" });
+              if (adminState.mode === "sending_to_group") {
+                try {
+                  await sendToGroup(env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, message);
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, "\u2705 Document sent to group successfully!");
+                  await putJSON(env.STATE, `admin_state:${chatId}`, { mode: "normal" });
+                } catch (error) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `\u274C Error sending document to group: ${error instanceof Error ? error.message : "Unknown error"}`);
+                }
+              } else {
+                try {
+                  console.log("Processing file upload from admin:", chatId);
+                  const result = await uploadQuestionsFromFile(env.STATE, env.TELEGRAM_BOT_TOKEN, message.document.file_id, env.TARGET_GROUP_ID);
+                  const responseMessage = `\u2705 Successfully uploaded ${result.uploaded} questions!
 
 \u{1F4CA} Database Status:
 \u2022 Total questions in database: ${result.total}
@@ -385,18 +486,38 @@ var worker_default = {
 \u2022 Questions remaining unsent: ${result.unsent}
 
 \u{1F4A1} Tip: You can also send JSON text directly (no file needed)!`;
-                console.log("Sending response to admin:", responseMessage);
-                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, responseMessage);
-              } catch (error) {
-                console.error("File upload error:", error);
-                const errorMessage = `\u274C Error uploading questions: ${error instanceof Error ? error.message : "Unknown error"}`;
-                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, errorMessage);
+                  console.log("Sending response to admin:", responseMessage);
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, responseMessage);
+                } catch (error) {
+                  console.error("File upload error:", error);
+                  const errorMessage = `\u274C Error uploading questions: ${error instanceof Error ? error.message : "Unknown error"}`;
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, errorMessage);
+                }
               }
             } else if (message.text && message.text !== "/start") {
-              try {
-                console.log("Processing JSON text from admin:", chatId);
-                const result = await uploadQuestionsFromText(env.STATE, message.text, env.TARGET_GROUP_ID);
-                const responseMessage = `\u2705 Successfully uploaded ${result.uploaded} questions from text!
+              const adminState = await getJSON(env.STATE, `admin_state:${chatId}`, { mode: "normal" });
+              if (adminState.mode === "sending_to_group") {
+                try {
+                  await sendToGroup(env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, message);
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, "\u2705 Message sent to group successfully!");
+                  await putJSON(env.STATE, `admin_state:${chatId}`, { mode: "normal" });
+                } catch (error) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `\u274C Error sending to group: ${error instanceof Error ? error.message : "Unknown error"}`);
+                }
+              } else if (adminState.mode === "deleting_question") {
+                const questionNum = parseInt(message.text.trim());
+                if (isNaN(questionNum) || questionNum < 1) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, "\u274C Please enter a valid question number (e.g., 1, 2, 3...)");
+                  return new Response("OK");
+                }
+                const result = await deleteQuestion(env.STATE, questionNum - 1, env.TARGET_GROUP_ID);
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, result.message);
+                await putJSON(env.STATE, `admin_state:${chatId}`, { mode: "normal" });
+              } else {
+                try {
+                  console.log("Processing JSON text from admin:", chatId);
+                  const result = await uploadQuestionsFromText(env.STATE, message.text, env.TARGET_GROUP_ID);
+                  const responseMessage = `\u2705 Successfully uploaded ${result.uploaded} questions from text!
 
 \u{1F4CA} Database Status:
 \u2022 Total questions in database: ${result.total}
@@ -404,15 +525,29 @@ var worker_default = {
 \u2022 Questions remaining unsent: ${result.unsent}
 
 \u{1F504} Next question will be #${result.sent + 1}`;
-                console.log("Sending response to admin:", responseMessage);
-                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, responseMessage);
-              } catch (error) {
-                console.error("JSON text upload error:", error);
-                const errorMessage = `\u274C Error uploading questions from text: ${error instanceof Error ? error.message : "Unknown error"}
+                  console.log("Sending response to admin:", responseMessage);
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, responseMessage);
+                } catch (error) {
+                  console.error("JSON text upload error:", error);
+                  const errorMessage = `\u274C Error uploading questions from text: ${error instanceof Error ? error.message : "Unknown error"}
 
 \u{1F4A1} Make sure to send valid JSON format:
 [{"question":"...", "options":{"A":"...", "B":"...", "C":"...", "D":"..."}, "answer":"A", "explanation":"..."}]`;
-                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, errorMessage);
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, errorMessage);
+                }
+              }
+            } else if (message.photo) {
+              const adminState = await getJSON(env.STATE, `admin_state:${chatId}`, { mode: "normal" });
+              if (adminState.mode === "sending_to_group") {
+                try {
+                  await sendToGroup(env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, message);
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, "\u2705 Photo sent to group successfully!");
+                  await putJSON(env.STATE, `admin_state:${chatId}`, { mode: "normal" });
+                } catch (error) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `\u274C Error sending photo to group: ${error instanceof Error ? error.message : "Unknown error"}`);
+                }
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '\u{1F4F7} To send photos to the group, use the "Send to Group" feature from the admin panel.');
               }
             }
           } else if (message.chat.type === "private") {
@@ -511,6 +646,79 @@ Ready to negotiate discount!`;
             const month = getCurrentMonth(env.TZ || "Asia/Kolkata");
             const report = await formatMonthlyReport(env.STATE, month);
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, report);
+          } else if (data === "admin:manage") {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const questionsList = await formatQuestionsList(env.STATE, 0);
+            const keyboard = {
+              inline_keyboard: [
+                [{ text: "\u{1F440} View Questions", callback_data: "admin:view:0" }],
+                [{ text: "\u{1F5D1}\uFE0F Delete Question", callback_data: "admin:delete_mode" }],
+                [{ text: "\u{1F519} Back to Main", callback_data: "admin:main" }]
+              ]
+            };
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `\u{1F4DA} Question Management
+
+${questionsList.text}`, { reply_markup: keyboard });
+          } else if (data === "admin:send") {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            await putJSON(env.STATE, `admin_state:${chatId}`, { mode: "sending_to_group" });
+            const keyboard = {
+              inline_keyboard: [
+                [{ text: "\u274C Cancel", callback_data: "admin:main" }]
+              ]
+            };
+            await sendMessage(
+              env.TELEGRAM_BOT_TOKEN,
+              chatId,
+              "\u{1F4E2} Send to Group Mode\n\nSend any message (text, photo, or document) and it will be forwarded to the group.\n\nWhat would you like to send?",
+              { reply_markup: keyboard }
+            );
+          } else if (data.startsWith("admin:view:")) {
+            const page = parseInt(data.split(":")[2]) || 0;
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const questionsList = await formatQuestionsList(env.STATE, page);
+            const keyboard = {
+              inline_keyboard: []
+            };
+            const navRow = [];
+            if (page > 0) {
+              navRow.push({ text: "\u2B05\uFE0F Previous", callback_data: `admin:view:${page - 1}` });
+            }
+            if (questionsList.hasMore) {
+              navRow.push({ text: "Next \u27A1\uFE0F", callback_data: `admin:view:${page + 1}` });
+            }
+            if (navRow.length > 0) {
+              keyboard.inline_keyboard.push(navRow);
+            }
+            keyboard.inline_keyboard.push([{ text: "\u{1F519} Back to Management", callback_data: "admin:manage" }]);
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, questionsList.text, { reply_markup: keyboard });
+          } else if (data === "admin:delete_mode") {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            await putJSON(env.STATE, `admin_state:${chatId}`, { mode: "deleting_question" });
+            const keyboard = {
+              inline_keyboard: [
+                [{ text: "\u274C Cancel", callback_data: "admin:manage" }]
+              ]
+            };
+            await sendMessage(
+              env.TELEGRAM_BOT_TOKEN,
+              chatId,
+              "\u{1F5D1}\uFE0F Delete Question\n\nEnter the question number you want to delete (e.g., 1, 2, 3...)\n\n\u26A0\uFE0F This action cannot be undone!",
+              { reply_markup: keyboard }
+            );
+          } else if (data === "admin:main") {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            await putJSON(env.STATE, `admin_state:${chatId}`, { mode: "normal" });
+            const keyboard = {
+              inline_keyboard: [
+                [{ text: "\u{1F4E4} Upload Questions", callback_data: "admin:upload" }],
+                [{ text: "\u{1F4DA} Manage Questions", callback_data: "admin:manage" }],
+                [{ text: "\u{1F4E2} Send to Group", callback_data: "admin:send" }],
+                [{ text: "\u{1F4CA} Daily Report", callback_data: "admin:daily" }],
+                [{ text: "\u{1F4C8} Monthly Report", callback_data: "admin:monthly" }]
+              ]
+            };
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, "\u{1F916} Admin Panel\n\nChoose an action:", { reply_markup: keyboard });
           }
         }
         return new Response("OK");

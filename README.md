@@ -108,9 +108,27 @@ curl https://<your-worker>.workers.dev/tick
 ### For Admin
 - Send `/start` to access admin panel
 - **Upload Questions**: Send JSON file OR JSON text directly with question array or JSONL format
+- **Manage Questions**: View all questions in database, delete unwanted questions
+- **Send to Group**: Immediately send any message, photo, or document to the group via bot
 - **Daily Report**: Get today's stats with top users
 - **Monthly Report**: Get current month's stats
 - **Smart Question Cycling**: Bot avoids repeating recent questions when possible
+
+## Admin Features
+
+### Question Management
+- **View Questions**: Browse all questions in the database with pagination
+- **Delete Questions**: Remove specific questions by number
+- **Upload Questions**: Add new questions via JSON file or text
+
+### Immediate Send to Group
+- **Text Messages**: Send announcements or updates directly to the group
+- **Photos**: Share images with the group instantly
+- **Documents**: Send files or documents to the group
+
+### Analytics & Reports
+- **Daily Reports**: View today's user engagement and accuracy stats
+- **Monthly Reports**: Get comprehensive monthly analytics
 
 ## Question Format
 
@@ -141,6 +159,7 @@ Upload questions as JSON array, JSONL, or direct JSON text message:
 - `questions` - Array of all questions
 - `idx:{chat_id}` - Next question index
 - `recent:{chat_id}` - Recently sent question indices (prevents immediate repetition)
+- `admin_state:{chat_id}` - Admin's current mode (for multi-step operations)
 - `stats:daily:{YYYY-MM-DD}` - Daily statistics
 - `stats:monthly:{YYYY-MM}` - Monthly statistics
 
