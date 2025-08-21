@@ -584,7 +584,7 @@ export default {
               if (explanation.length > 120) {
                 explanation = explanation.substring(0, 120) + '...';
               }
-              const verdict = isCorrect ? '✓correct' : '×wrong';
+              const verdict = isCorrect ? '✅ correct' : '❌ wrong';
               const answerLine = `Answer: ${question.answer}`;
               const popup = `${verdict}\n\n${answerLine}\nExplanation: ${explanation}\n\n(to get Prepladder Discounts text me)`;
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popup, true);
