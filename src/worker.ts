@@ -771,8 +771,8 @@ export default {
             // Check if user is waiting to provide WhatsApp number
             const bargainPending = await env.STATE.get(`bargain:${userId}`);
             if (bargainPending === 'pending' && message.text) {
-              // Validate WhatsApp number format (basic validation)
-              const phoneRegex = /^(\+?91)?[6-9]\d{9}$/;
+              // Validate WhatsApp number format (any valid phone number)
+              const phoneRegex = /^[\+]?[1-9]\d{1,14}$/;
               if (phoneRegex.test(message.text.replace(/\s/g, ''))) {
                 // Store the WhatsApp number and notify admin
                 await env.STATE.put(`whatsapp:${userId}`, message.text);
@@ -789,7 +789,7 @@ export default {
                   `📱 WhatsApp Number Received\n\nUser: ${userName}\nUsername: ${username}\nUser ID: ${userId}\nWhatsApp: ${message.text}\n\nReady for bargaining!`);
               } else {
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
-                  '❌ Please send a valid Indian WhatsApp number.\n\nFormat: +91XXXXXXXXXX or 91XXXXXXXXXX\n\nExample: +919876543210');
+                  '❌ Please send a valid WhatsApp number.\n\nFormat: Any valid phone number\n\nExamples: 9876543210, +919876543210, 919876543210');
               }
             } else {
               // Regular non-admin private message
@@ -871,8 +871,8 @@ export default {
           // Set state to wait for WhatsApp number
           await env.STATE.put(`bargain:${query.from.id}`, 'pending');
           
-          await sendMessage(env.TELEGRAM_BOT_TOKEN, query.from.id, 
-            '📱 Please send your WhatsApp number so admin can reach you for bargaining.\n\nFormat: +91XXXXXXXXXX or 91XXXXXXXXXX\n\nAdmin will contact you soon! 🕐');
+                      await sendMessage(env.TELEGRAM_BOT_TOKEN, query.from.id, 
+              '📱 Please send your WhatsApp number so admin can reach you for bargaining.\n\nFormat: Any valid phone number\n\nAdmin will contact you soon! 🕐');
             
           } else if (data === 'admin:upload') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
