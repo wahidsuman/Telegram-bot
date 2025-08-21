@@ -324,6 +324,26 @@ function formatQuestionPreview(q: Question, index: number): string {
   return `#${index + 1}\n\n${esc(q.question)}\n\nA) ${esc(q.options.A)}\nB) ${esc(q.options.B)}\nC) ${esc(q.options.C)}\nD) ${esc(q.options.D)}\n\nAnswer: ${q.answer}`;
 }
 
+function truncate(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  return text.slice(0, Math.max(0, maxLen - 1)) + '…';
+}
+
+function chunkLines(lines: string[], maxChars: number): string[] {
+  const chunks: string[] = [];
+  let current = '';
+  for (const line of lines) {
+    if ((current + (current ? '\n' : '') + line).length > maxChars) {
+      if (current) chunks.push(current);
+      current = line;
+    } else {
+      current = current ? current + '\n' + line : line;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
 async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: string, targetGroupId: string): Promise<{ uploaded: number; total: number; sent: number; unsent: number }> {
   const fileInfo = await getFile(token, fileId);
   
@@ -505,7 +525,8 @@ export default {
                   [{ text: '⏭️ Post Next Now', callback_data: 'admin:postNow' }],
                   [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
                   [{ text: '📣 Broadcast to Group', callback_data: 'admin:broadcast' }],
-                  [{ text: '🛠️ Manage Questions', callback_data: 'admin:manage' }]
+                  [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
+                  [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }]
                 ]
               };
               
@@ -640,11 +661,14 @@ export default {
           } else if (data === 'admin:manage') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
-            if (questions.length === 0) {
+            const indexKey = `idx:${env.TARGET_GROUP_ID}`;
+            const currentIndex = await getJSON<number>(env.STATE, indexKey, 0);
+            const upcoming = questions.slice(currentIndex);
+            if (upcoming.length === 0) {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions in database.');
             } else {
               await env.STATE.put('admin:manage:index', '0');
-              const txt = formatQuestionPreview(questions[0], 0);
+              const txt = formatQuestionPreview(upcoming[0], currentIndex + 0);
               const kb = { inline_keyboard: [[
                 { text: '⬅️ Prev', callback_data: 'admin:mg:prev' },
                 { text: '➡️ Next', callback_data: 'admin:mg:next' }
@@ -662,21 +686,24 @@ export default {
           } else if (data === 'admin:mg:prev' || data === 'admin:mg:next') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
-            if (questions.length === 0) {
+            const indexKey = `idx:${env.TARGET_GROUP_ID}`;
+            const currentIndex = await getJSON<number>(env.STATE, indexKey, 0);
+            const upcoming = questions.slice(currentIndex);
+            if (upcoming.length === 0) {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions in database.');
             } else {
               const idxStr = (await env.STATE.get('admin:manage:index')) || '0';
               let idx = parseInt(idxStr, 10) || 0;
-              if (data === 'admin:mg:next') idx = (idx + 1) % questions.length;
-              if (data === 'admin:mg:prev') idx = (idx - 1 + questions.length) % questions.length;
+              if (data === 'admin:mg:next') idx = (idx + 1) % upcoming.length;
+              if (data === 'admin:mg:prev') idx = (idx - 1 + upcoming.length) % upcoming.length;
               await env.STATE.put('admin:manage:index', String(idx));
-              const txt = formatQuestionPreview(questions[idx], idx);
+              const txt = formatQuestionPreview(upcoming[idx], currentIndex + idx);
               const kb = { inline_keyboard: [[
                 { text: '⬅️ Prev', callback_data: 'admin:mg:prev' },
                 { text: '➡️ Next', callback_data: 'admin:mg:next' }
               ], [
-                { text: '📝 Edit', callback_data: `admin:edit:${idx}` },
-                { text: '🗑️ Delete', callback_data: `admin:del:${idx}` }
+                { text: '📝 Edit', callback_data: `admin:edit:${currentIndex + idx}` },
+                { text: '🗑️ Delete', callback_data: `admin:del:${currentIndex + idx}` }
               ], [
                 { text: '✖️ Close', callback_data: 'admin:mg:close' }
               ]] };
@@ -693,6 +720,25 @@ export default {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `🗑️ Deleted question #${idx + 1}. Remaining: ${list.length}`);
             } else {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Invalid index');
+            }
+          } else if (data === 'admin:listAll') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            if (questions.length === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions in database.');
+            } else {
+              // Build a concise list with truncation to respect Telegram's message limits
+              const lines: string[] = [];
+              for (let i = 0; i < questions.length; i++) {
+                const q = questions[i];
+                const line = `#${i + 1} ${truncate(q.question.replace(/\n/g, ' '), 80)} [Ans: ${q.answer}]`;
+                lines.push(line);
+              }
+              const chunks = chunkLines(lines, 3500);
+              for (const chunk of chunks) {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `<pre>${esc(chunk)}</pre>`);
+              }
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `Total: ${questions.length} questions.`);
             }
           } else if (data.startsWith('admin:edit:')) {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
