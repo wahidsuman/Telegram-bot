@@ -4,6 +4,7 @@ interface Env {
   STATE: KVNamespace;
   TELEGRAM_BOT_TOKEN: string;
   TARGET_GROUP_ID: string;
+  TARGET_CHANNEL_ID?: string;
   ADMIN_CHAT_ID: string;
   WEBHOOK_SECRET: string;
   TZ: string;
@@ -192,7 +193,7 @@ async function ensureKeys(kv: KVNamespace): Promise<void> {
   }
 }
 
-async function initializeBotIfNeeded(kv: KVNamespace, token: string, targetGroupId: string): Promise<void> {
+async function initializeBotIfNeeded(kv: KVNamespace, token: string, targetGroupId: string, extraChannelId?: string): Promise<void> {
   const questions = await getJSON<Question[]>(kv, 'questions', []);
   if (questions.length === 0) {
     // Add sample question to bootstrap the system
@@ -212,15 +213,18 @@ async function initializeBotIfNeeded(kv: KVNamespace, token: string, targetGroup
   }
   
   // Check if we need to initialize the index
-  const indexKey = `idx:${targetGroupId}`;
-  const currentIndex = await getJSON<number>(kv, indexKey, -1);
-  if (currentIndex === -1) {
-    await putJSON(kv, indexKey, 0);
-    // Post the first question immediately to start the cycle
-    try {
-      await postNext(kv, token, targetGroupId);
-    } catch (error) {
-      console.log('Error posting initial question:', error);
+  const chatsToInit = [targetGroupId, ...(extraChannelId ? [extraChannelId] : [])];
+  for (const chatId of chatsToInit) {
+    const indexKey = `idx:${chatId}`;
+    const currentIndex = await getJSON<number>(kv, indexKey, -1);
+    if (currentIndex === -1) {
+      await putJSON(kv, indexKey, 0);
+      // Post the first question immediately to start the cycle
+      try {
+        await postNext(kv, token, chatId);
+      } catch (error) {
+        console.log('Error posting initial question to', chatId, error);
+      }
     }
   }
 }
@@ -289,6 +293,13 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
   };
   
   await sendMessage(token, chatId, text, { reply_markup: keyboard });
+}
+
+async function postNextToAll(kv: KVNamespace, token: string, groupId: string, extraChannelId?: string): Promise<void> {
+  await postNext(kv, token, groupId);
+  if (extraChannelId) {
+    await postNext(kv, token, extraChannelId);
+  }
 }
 
 function validateQuestion(q: any): q is Question {
@@ -650,7 +661,12 @@ export default {
         const update: TelegramUpdate = await request.json();
         
         await ensureKeys(env.STATE);
-        await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID);
+        await initializeBotIfNeeded(
+          env.STATE,
+          env.TELEGRAM_BOT_TOKEN,
+          env.TARGET_GROUP_ID,
+          env.TARGET_CHANNEL_ID
+        );
         
         if (update.message) {
           const message = update.message;
@@ -960,8 +976,8 @@ export default {
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, report);
           } else if (data === 'admin:postNow') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Posting next MCQ…');
-            await postNext(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID);
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Posted next MCQ to the group');
+            await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Posted next MCQ to all targets');
           } else if (data === 'admin:dbstatus') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
@@ -970,7 +986,8 @@ export default {
             const sent = currentIndex;
             const total = questions.length;
             const unsent = Math.max(0, total - sent);
-            const msg = `🗄️ DB Status\n\n• Total questions: ${total}\n• Sent: ${sent}\n• Unsent: ${unsent}`;
+            const extraIdx = env.TARGET_CHANNEL_ID ? await getJSON<number>(env.STATE, `idx:${env.TARGET_CHANNEL_ID}`, 0) : undefined;
+            const msg = `🗄️ DB Status\n\n• Total questions: ${total}\n• Sent (Group): ${sent}\n${env.TARGET_CHANNEL_ID ? `• Sent (Channel): ${extraIdx}\n` : ''}• Unsent: ${unsent}`;
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, msg);
           } else if (data === 'admin:broadcast') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
@@ -1111,12 +1128,12 @@ export default {
         return new Response('OK');
       } else if (url.pathname === '/tick' && request.method === 'GET') {
         await ensureKeys(env.STATE);
-        await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID);
-        await postNext(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID);
+        await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
+        await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
         return new Response('MCQ posted');
       } else if (url.pathname === '/start-posting' && request.method === 'GET') {
         await ensureKeys(env.STATE);
-        await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID);
+        await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
         return new Response('Bot initialized and first MCQ posted');
       } else if (url.pathname === '/health' && request.method === 'GET') {
         return new Response('ok');
@@ -1132,8 +1149,8 @@ export default {
   async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     try {
       await ensureKeys(env.STATE);
-      await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID);
-      await postNext(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID);
+      await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
+      await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
     } catch (error) {
       console.error('Scheduled error:', error);
     }
