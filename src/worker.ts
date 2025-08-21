@@ -353,10 +353,71 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
   
   const content = await downloadFile(token, fileInfo.result.file_path);
   
-  let newQuestions: Question[] = [];
+  let newQuestions: any[] = [];
+  
+  // Helper: CSV parsing utilities
+  function splitCsvLine(line: string): string[] {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (i + 1 < line.length && line[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          current += ch;
+        }
+      } else {
+        if (ch === ',') {
+          result.push(current);
+          current = '';
+        } else if (ch === '"') {
+          inQuotes = true;
+        } else {
+          current += ch;
+        }
+      }
+    }
+    result.push(current);
+    return result.map(s => s.trim());
+  }
+  function parseCsvQuestions(csvText: string): any[] {
+    const lines = csvText.split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) return [];
+    const header = splitCsvLine(lines[0]).map(h => h.toLowerCase());
+    const required = ['question', 'a', 'b', 'c', 'd', 'answer', 'explanation'];
+    const hasAll = required.every(k => header.includes(k));
+    if (!hasAll) return [];
+    const idx = (name: string) => header.indexOf(name);
+    const rows = lines.slice(1);
+    const items: any[] = [];
+    for (const row of rows) {
+      const cols = splitCsvLine(row);
+      if (cols.length < header.length) continue;
+      const obj = {
+        question: cols[idx('question')] || '',
+        options: {
+          A: cols[idx('a')] || '',
+          B: cols[idx('b')] || '',
+          C: cols[idx('c')] || '',
+          D: cols[idx('d')] || ''
+        },
+        answer: (cols[idx('answer')] || '').toUpperCase(),
+        explanation: cols[idx('explanation')] || ''
+      };
+      items.push(obj);
+    }
+    return items;
+  }
   
   try {
-    // Try parsing as JSON array first
+    // Try parsing as JSON array or object first
     const parsed = JSON.parse(content);
     if (Array.isArray(parsed)) {
       newQuestions = parsed;
@@ -364,14 +425,20 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
       newQuestions = [parsed];
     }
   } catch {
-    // Try parsing as JSONL
-    const lines = content.split('\n').filter(line => line.trim());
-    for (const line of lines) {
-      try {
-        const q = JSON.parse(line);
-        newQuestions.push(q);
-      } catch {
-        throw new Error('Invalid JSON format');
+    // Try CSV
+    const csvParsed = parseCsvQuestions(content);
+    if (csvParsed.length > 0) {
+      newQuestions = csvParsed;
+    } else {
+      // Try parsing as JSONL
+      const lines = content.split('\n').filter(line => line.trim());
+      for (const line of lines) {
+        try {
+          const q = JSON.parse(line);
+          newQuestions.push(q);
+        } catch {
+          throw new Error('Invalid JSON/CSV format');
+        }
       }
     }
   }
@@ -389,8 +456,20 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
   }
   
   const existingQuestions = await getJSON<Question[]>(kv, 'questions', []);
-  const allQuestions = [...existingQuestions, ...validQuestions];
-  
+  // Build key set for duplicates (normalize by question + options + answer)
+  const buildKey = (q: Question) =>
+    `${q.question}\u0001${q.options.A}\u0001${q.options.B}\u0001${q.options.C}\u0001${q.options.D}\u0001${q.answer}`.toLowerCase();
+  const seen = new Set<string>(existingQuestions.map(buildKey));
+  // Deduplicate within new batch
+  const batchSeen = new Set<string>();
+  const uniqueNew: Question[] = [];
+  for (const q of validQuestions) {
+    const k = buildKey(q);
+    if (seen.has(k) || batchSeen.has(k)) continue;
+    batchSeen.add(k);
+    uniqueNew.push(q);
+  }
+  const allQuestions = [...existingQuestions, ...uniqueNew];
   await putJSON(kv, 'questions', allQuestions);
   
   // Get current index to calculate sent vs unsent
@@ -398,7 +477,7 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
   const currentIndex = await getJSON<number>(kv, indexKey, 0);
   
   return {
-    uploaded: validQuestions.length,
+    uploaded: uniqueNew.length,
     total: allQuestions.length,
     sent: currentIndex,
     unsent: Math.max(0, allQuestions.length - currentIndex)
@@ -537,7 +616,7 @@ export default {
                 console.log('Processing file upload from admin:', chatId);
                 const result = await uploadQuestionsFromFile(env.STATE, env.TELEGRAM_BOT_TOKEN, message.document.file_id, env.TARGET_GROUP_ID);
                 
-                const responseMessage = `✅ Upload Summary\n\n• Uploaded this time: ${result.uploaded}\n• Remaining to post: ${result.unsent}\n• Posted till now: ${result.sent}\n• Total in database: ${result.total}`;
+                const responseMessage = `✅ Upload Summary\n\n• Uploaded this time: ${result.uploaded}\n• Remaining to post: ${result.unsent}\n• Posted till now: ${result.sent}\n• Total in database: ${result.total}\n\n(duplicates are automatically skipped)`;
                 
                 console.log('Sending response to admin:', responseMessage);
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, responseMessage);
