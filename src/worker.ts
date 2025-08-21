@@ -599,7 +599,7 @@ export default {
             
             // Send follow-up message
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
-              'Thank you for Purchasing With Our Code P650. If You want more discount, you can always click on the bargain button');
+              '⬆️ Copy This  Code P650 To Get Best Prepladder Discounts For All The Prepladder Plans.If You Need Extra Discount You Can Click On The Bargain Button 🔘');
             
             // Notify admin with username
             const userName = `${query.from.first_name}${query.from.last_name ? ' ' + query.from.last_name : ''}`;
