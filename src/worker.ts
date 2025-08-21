@@ -609,7 +609,7 @@ export default {
               
           } else if (data === 'coupon:bargain') {
             // Show full styled text as popup; trim to keep within Telegram popup limits
-            let popupText = '🛑 Hold your horses!\nThe Admin is suiting up to face your legendary bargaining skills 🥷💰\nSharpen your words, polish your charm… because this is gonna be\nTHE ULTIMATE DISCOUNT SHOWDOWN! ⚔️😂';
+            let popupText = 'Wait a sec… Admin is loading 🤖💭\nPrepare your ultimate bargaining attack 💣😂\nDiscount battle begins soon!';
             if (popupText.length > 190) {
               popupText = popupText.slice(0, 187) + '...';
             }
