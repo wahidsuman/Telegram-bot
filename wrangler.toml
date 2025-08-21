@@ -1,0 +1,17 @@
+name = "telegram-mcq-bot"
+main = "src/worker.ts"
+compatibility_date = "2024-01-01"
+account_id = "ef5bdf3d98fcdd074210212918b0776f"
+
+# Use workers.dev subdomain for deployment  
+workers_dev = true
+
+[[kv_namespaces]]
+binding = "STATE"
+id = "acf08b0c797e41eeac717297ac9d7f7d"
+
+[vars]
+TZ = "Asia/Kolkata"
+
+[triggers]
+crons = ["0 * * * *"]

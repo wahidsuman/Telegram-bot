@@ -1,0 +1,39 @@
+# Node modules
+node_modules/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output
+dist/
+.build/
+.cache/
+
+# Local environment files
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Replit specific
+.replit
+replit.md
+
+# Cloudflare Wrangler
+.wrangler/
+wrangler.toml.bak
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+temp-worker/
+*.zip
