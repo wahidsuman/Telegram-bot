@@ -11,6 +11,7 @@ pnpm-debug.log*
 dist/
 .build/
 .cache/
+.wrangler/
 
 # Local environment files
 .env
