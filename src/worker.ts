@@ -705,17 +705,42 @@ export default {
               }
             }
           } else if (message.chat.type === 'private') {
-            // Non-admin private message
-            const keyboard = {
-              inline_keyboard: [
-                [{ text: 'Get Code', callback_data: 'coupon:copy' }],
-                [{ text: 'Bargain', callback_data: 'coupon:bargain' }]
-              ]
-            };
-            
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
-              'Here For Best Prepladder Discount Coupon? Click Below -', 
-              { reply_markup: keyboard });
+            // Check if user is waiting to provide WhatsApp number
+            const bargainPending = await env.STATE.get(`bargain:${userId}`);
+            if (bargainPending === 'pending' && message.text) {
+              // Validate WhatsApp number format (basic validation)
+              const phoneRegex = /^(\+?91)?[6-9]\d{9}$/;
+              if (phoneRegex.test(message.text.replace(/\s/g, ''))) {
+                // Store the WhatsApp number and notify admin
+                await env.STATE.put(`whatsapp:${userId}`, message.text);
+                await env.STATE.delete(`bargain:${userId}`);
+                
+                const userName = `${message.from?.first_name}${message.from?.last_name ? ' ' + message.from.last_name : ''}`;
+                const username = message.from?.username ? `@${message.from.username}` : '—';
+                
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                  '✅ Thank you! Your WhatsApp number has been saved. Admin will contact you soon for bargaining. 🕐');
+                
+                // Notify admin
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, 
+                  `📱 WhatsApp Number Received\n\nUser: ${userName}\nUsername: ${username}\nUser ID: ${userId}\nWhatsApp: ${message.text}\n\nReady for bargaining!`);
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                  '❌ Please send a valid Indian WhatsApp number.\n\nFormat: +91XXXXXXXXXX or 91XXXXXXXXXX\n\nExample: +919876543210');
+              }
+            } else {
+              // Regular non-admin private message
+              const keyboard = {
+                inline_keyboard: [
+                  [{ text: 'Get Code', callback_data: 'coupon:copy' }],
+                  [{ text: 'Bargain', callback_data: 'coupon:bargain' }]
+                ]
+              };
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                'Here For Best Prepladder Discount Coupon? Click Below -', 
+                { reply_markup: keyboard });
+            }
           }
           // Admin command: /msg <userId> <text>
           if (chatId.toString() === env.ADMIN_CHAT_ID && message.text && message.text.startsWith('/msg ')) {
@@ -779,23 +804,12 @@ export default {
               { reply_markup: { inline_keyboard: [[{ text: '↩️ Reply to user', callback_data: `admin:reply:${userId}` }]] } }
             );
               
-          } else if (data === 'coupon:bargain') {
-            // Show full styled text as popup; trim to keep within Telegram popup limits
-            let popupText = 'Wait a sec… Admin is loading 🤖💭\nPrepare your ultimate bargaining attack 💣😂\nDiscount battle begins soon!';
-            if (popupText.length > 190) {
-              popupText = popupText.slice(0, 187) + '...';
-            }
-            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popupText, true);
-            
-            // Notify admin
-            const userName = `${query.from.first_name}${query.from.last_name ? ' ' + query.from.last_name : ''}`;
-            const usernameLink = query.from.username ? `<a href="https://t.me/${query.from.username}">@${query.from.username}</a>` : '—';
-            const uidLink = `<a href="tg://user?id=${userId}">${userId}</a>`;
-            
-            const bargainMsg = `🤝 Bargain Request\n\nUser: ${userName}\nUsername: ${usernameLink}\nUser ID: ${uidLink}\n\nReady to negotiate discount!`;
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, bargainMsg,
-              { reply_markup: { inline_keyboard: [[{ text: '↩️ Reply to user', callback_data: `admin:reply:${userId}` }]] } }
-            );
+                  } else if (data === 'coupon:bargain') {
+          // Set state to wait for WhatsApp number
+          await env.STATE.put(`bargain:${query.from.id}`, 'pending');
+          
+          await sendMessage(env.TELEGRAM_BOT_TOKEN, query.from.id, 
+            '📱 Please send your WhatsApp number so admin can reach you for bargaining.\n\nFormat: +91XXXXXXXXXX or 91XXXXXXXXXX\n\nAdmin will contact you soon! 🕐');
             
           } else if (data === 'admin:upload') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
