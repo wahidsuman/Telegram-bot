@@ -586,7 +586,7 @@ export default {
               }
               const verdict = isCorrect ? '✅ correct' : '❌ wrong';
               const answerLine = `Answer: ${question.answer}`;
-              const popup = `${verdict}\n\n${answerLine}\nExplanation: ${explanation}\n\n(to get Prepladder Discounts text me)`;
+              const popup = `${verdict}\n\n${answerLine}\n\nExplanation: ${explanation}\n\n(to get Prepladder Discounts text me)`;
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popup, true);
             } else {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question not found', true);
