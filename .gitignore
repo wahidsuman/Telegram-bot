@@ -23,3 +23,17 @@ Thumbs.db
 # Replit specific
 .replit
 replit.md
+
+# Cloudflare Wrangler
+.wrangler/
+wrangler.toml.bak
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+temp-worker/
+*.zip
