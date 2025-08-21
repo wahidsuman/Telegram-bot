@@ -284,12 +284,17 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
   const text = `🧠 Hourly MCQ #${currentIndex + 1}\n\n${esc(question.question)}\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}`;
   
   const keyboard = {
-    inline_keyboard: [[
-      { text: 'A', callback_data: `ans:${currentIndex}:A` },
-      { text: 'B', callback_data: `ans:${currentIndex}:B` },
-      { text: 'C', callback_data: `ans:${currentIndex}:C` },
-      { text: 'D', callback_data: `ans:${currentIndex}:D` }
-    ]]
+    inline_keyboard: [
+      [
+        { text: 'A', callback_data: `ans:${currentIndex}:A` },
+        { text: 'B', callback_data: `ans:${currentIndex}:B` },
+        { text: 'C', callback_data: `ans:${currentIndex}:C` },
+        { text: 'D', callback_data: `ans:${currentIndex}:D` }
+      ],
+      [
+        { text: '💬 Join Discussion', url: `https://t.me/c/${chatId.toString().replace('-100', '')}/1` }
+      ]
+    ]
   };
   
   await sendMessage(token, chatId, text, { reply_markup: keyboard });
