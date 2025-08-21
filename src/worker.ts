@@ -772,9 +772,10 @@ export default {
             
             // Notify admin with username
             const userName = `${query.from.first_name}${query.from.last_name ? ' ' + query.from.last_name : ''}`;
-            const username = query.from.username ? `@${query.from.username}` : '—';
+            const usernameLink = query.from.username ? `<a href="https://t.me/${query.from.username}">@${query.from.username}</a>` : '—';
+            const uidLink = `<a href="tg://user?id=${userId}">${userId}</a>`;
             await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, 
-              `💰 Code Used: P650\n\nUser: ${userName}\nUsername: ${username}\nUser ID: ${userId}\n\nUser has copied the discount code!`,
+              `💰 Code Used: P650\n\nUser: ${userName}\nUsername: ${usernameLink}\nUser ID: ${uidLink}\n\nUser has copied the discount code!`,
               { reply_markup: { inline_keyboard: [[{ text: '↩️ Reply to user', callback_data: `admin:reply:${userId}` }]] } }
             );
               
@@ -788,9 +789,10 @@ export default {
             
             // Notify admin
             const userName = `${query.from.first_name}${query.from.last_name ? ' ' + query.from.last_name : ''}`;
-            const username = query.from.username ? `@${query.from.username}` : '—';
+            const usernameLink = query.from.username ? `<a href="https://t.me/${query.from.username}">@${query.from.username}</a>` : '—';
+            const uidLink = `<a href="tg://user?id=${userId}">${userId}</a>`;
             
-            const bargainMsg = `🤝 Bargain Request\n\nUser: ${userName}\nUsername: ${username}\nUser ID: ${userId}\n\nReady to negotiate discount!`;
+            const bargainMsg = `🤝 Bargain Request\n\nUser: ${userName}\nUsername: ${usernameLink}\nUser ID: ${uidLink}\n\nReady to negotiate discount!`;
             await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, bargainMsg,
               { reply_markup: { inline_keyboard: [[{ text: '↩️ Reply to user', callback_data: `admin:reply:${userId}` }]] } }
             );
