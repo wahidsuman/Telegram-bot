@@ -882,12 +882,12 @@ export default {
               { reply_markup: { inline_keyboard: [[{ text: '↩️ Reply to user', callback_data: `admin:reply:${userId}` }]] } }
             );
               
-                  } else if (data === 'coupon:bargain') {
+                          } else if (data === 'coupon:bargain') {
           // Set state to wait for WhatsApp number
           await env.STATE.put(`bargain:${query.from.id}`, 'pending');
           
-                      await sendMessage(env.TELEGRAM_BOT_TOKEN, query.from.id, 
-              '📱 Please send your WhatsApp number so admin can reach you for bargaining.\n\nFormat: Any valid phone number\n\nAdmin will contact you soon! 🕐');
+          await sendMessage(env.TELEGRAM_BOT_TOKEN, query.from.id, 
+            'Wait a sec… Admin is loading 🤖💭\nPrepare your ultimate bargaining attack 💣😂\nDiscount battle begins soon! ⚔️\n📲 Please drop your WhatsApp number so Admin can contact you.');
             
           } else if (data === 'admin:upload') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
