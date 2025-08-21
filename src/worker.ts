@@ -344,6 +344,39 @@ function chunkLines(lines: string[], maxChars: number): string[] {
   return chunks;
 }
 
+function buildQuestionKey(q: Question): string {
+  return (
+    `${q.question}\u0001${q.options.A}\u0001${q.options.B}\u0001${q.options.C}\u0001${q.options.D}\u0001${q.answer}`
+  ).toLowerCase();
+}
+
+function parseAdminTemplate(text: string): { question: string; options: { A: string; B: string; C: string; D: string }; explanation: string; answer?: 'A' | 'B' | 'C' | 'D' } | null {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const data: Record<string, string> = {};
+  for (const line of lines) {
+    const m = line.match(/^([A-Za-z]+)\s*=\s*(.*)$/);
+    if (!m) continue;
+    const key = m[1].toLowerCase();
+    const value = m[2].trim();
+    data[key] = (data[key] ? data[key] + '\n' : '') + value;
+  }
+  if (!data['question'] || !data['a'] || !data['b'] || !data['c'] || !data['d'] || !data['explanation']) {
+    return null;
+  }
+  const candidate: any = {
+    question: data['question'],
+    options: { A: data['a'], B: data['b'], C: data['c'], D: data['d'] },
+    explanation: data['explanation']
+  };
+  if (data['answer']) {
+    const ans = (data['answer'].trim().toUpperCase());
+    if (['A','B','C','D'].includes(ans)) {
+      candidate.answer = ans;
+    }
+  }
+  return candidate;
+}
+
 async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: string, targetGroupId: string): Promise<{ uploaded: number; total: number; sent: number; unsent: number }> {
   const fileInfo = await getFile(token, fileId);
   
@@ -610,6 +643,32 @@ export default {
               };
               
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel', { reply_markup: keyboard });
+            } else if (message.text) {
+              // Admin free-text template upload
+              const parsed = parseAdminTemplate(message.text);
+              if (parsed) {
+                // If answer missing, ask for it and stash pending
+                if (!parsed.answer) {
+                  await env.STATE.put('admin:pending:q', JSON.stringify(parsed));
+                  const kb = { inline_keyboard: [[
+                    { text: 'A', callback_data: 'admin:pendans:A' },
+                    { text: 'B', callback_data: 'admin:pendans:B' },
+                    { text: 'C', callback_data: 'admin:pendans:C' },
+                    { text: 'D', callback_data: 'admin:pendans:D' }
+                  ]] };
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Select the correct answer for the submitted question:', { reply_markup: kb });
+                } else {
+                  const candidate: Question = trimQuestion(parsed as Question);
+                  const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+                  const seen = new Set(list.map(buildQuestionKey));
+                  if (seen.has(buildQuestionKey(candidate))) {
+                    await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '⚠️ Duplicate detected. Skipped adding to database.');
+                  } else {
+                    await putJSON(env.STATE, 'questions', [...list, candidate]);
+                    await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ Question added to database.');
+                  }
+                }
+              }
             } else if (message.document) {
               // Handle file upload - ensure we respond to admin
               try {
@@ -790,6 +849,25 @@ export default {
                 { text: '✖️ Close', callback_data: 'admin:mg:close' }
               ]] };
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, txt, { reply_markup: kb });
+            }
+          } else if (data.startsWith('admin:pendans:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const ans = data.split(':')[2] as 'A'|'B'|'C'|'D';
+            const raw = await env.STATE.get('admin:pending:q');
+            if (!raw) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No pending question found.');
+            } else {
+              const base = JSON.parse(raw);
+              const candidate: Question = trimQuestion({ ...base, answer: ans });
+              const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+              const seen = new Set(list.map(buildQuestionKey));
+              if (seen.has(buildQuestionKey(candidate))) {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '⚠️ Duplicate detected. Skipped adding to database.');
+              } else {
+                await putJSON(env.STATE, 'questions', [...list, candidate]);
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Question added to database.');
+              }
+              await env.STATE.delete('admin:pending:q');
             }
           } else if (data.startsWith('admin:del:')) {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
