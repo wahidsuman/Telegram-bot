@@ -1284,7 +1284,7 @@ export default {
               };
                 
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
-                  'Here For Best Prepladder Discount Coupon? Click Below -', 
+                  'Here for discount coupons? Click on "Get Code" button below and select Prepladder, Marrow, Cerebellum or any other discount coupons available in the market.You will get guaranteed discount,For any Help Click on "Contact Admin" button 🔘', 
                   { reply_markup: keyboard });
               }
             }
