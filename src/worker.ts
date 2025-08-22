@@ -1027,9 +1027,25 @@ export default {
               }
             }
           } else if (message.chat.type === 'private') {
-            // Check if user is waiting to provide WhatsApp number
-            const bargainPending = await env.STATE.get(`bargain:${userId}`);
-            if (bargainPending === 'pending' && message.text) {
+            // Handle /start command for regular users
+            if (message.text === '/start') {
+              const keyboard = {
+                inline_keyboard: [
+                  [{ text: 'Get Code', callback_data: 'coupon:copy' }],
+                  [{ text: 'Contact Admin', callback_data: 'coupon:bargain' }],
+                  [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
+                  [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
+                  [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
+                ]
+              };
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                'Here For Best Prepladder Discount Coupon? Click Below -', 
+                { reply_markup: keyboard });
+            } else {
+              // Check if user is waiting to provide WhatsApp number
+              const bargainPending = await env.STATE.get(`bargain:${userId}`);
+              if (bargainPending === 'pending' && message.text) {
               // Validate WhatsApp number format (any valid phone number)
               const phoneRegex = /^[\+]?[1-9]\d{1,14}$/;
               if (phoneRegex.test(message.text.replace(/\s/g, ''))) {
@@ -1082,19 +1098,21 @@ export default {
               }
             }
           }
-          // Admin command: /msg <userId> <text>
-          if (isAdmin && message.text && message.text.startsWith('/msg ')) {
-            const rest = message.text.slice(5).trim();
-            const sp = rest.indexOf(' ');
-            if (sp > 0) {
-              const uid = rest.slice(0, sp);
-              const text = rest.slice(sp + 1);
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, uid, text);
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ Message sent');
-            } else {
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Usage: /msg <userId> <text>');
-            }
+        }
+        
+        // Admin command: /msg <userId> <text>
+        if (isAdmin && message.text && message.text.startsWith('/msg ')) {
+          const rest = message.text.slice(5).trim();
+          const sp = rest.indexOf(' ');
+          if (sp > 0) {
+            const uid = rest.slice(0, sp);
+            const text = rest.slice(sp + 1);
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, uid, text);
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ Message sent');
+          } else {
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Usage: /msg <userId> <text>');
           }
+        }
         } else if (update.callback_query) {
           const query = update.callback_query;
           const data = query.data || '';
