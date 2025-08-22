@@ -1034,8 +1034,8 @@ export default {
               } else if (editDiscountPending && message.text) {
                 await handleDiscountButtonEditing(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId, message.text, editDiscountPending);
                 return new Response('OK');
-              } else if (message.text === '/start' || message.text === '/admin') {
-              console.log('Admin panel requested by:', chatId, 'User:', message.from?.username);
+              } else if (message.text && (message.text.trim() === '/start' || message.text.trim() === '/admin')) {
+              console.log('Admin panel requested by:', chatId, 'User:', message.from?.username, 'Text:', JSON.stringify(message.text));
               const keyboard = {
                 inline_keyboard: [
                   [{ text: '📤 Upload Questions', callback_data: 'admin:upload' }],
@@ -1053,7 +1053,7 @@ export default {
               
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel', { reply_markup: keyboard });
             } else if (message.text === '/whoami') {
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `You are: id=${message.from?.id}, username=@${message.from?.username || ''}`);
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `You are: id=${message.from?.id}, username=@${message.from?.username || ''}\n\nAdmin Chat ID: ${env.ADMIN_CHAT_ID}\nIs Admin: ${isAdmin}\nChat ID: ${chatId}`);
             } else if (message.text === '/addbutton') {
               const parts = message.text.split(' ');
               if (parts.length >= 4) {
@@ -1111,7 +1111,8 @@ export default {
               } else {
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Button with ID '${id}' not found. Use /listbuttons to see available buttons.`);
               }
-            } else if (message.text === '/smartdedupe') {
+            } else if (message.text && message.text.trim() === '/smartdedupe') {
+              console.log('Smart dedupe requested by:', chatId, 'User:', message.from?.username, 'Text:', JSON.stringify(message.text));
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '🔍 Starting smart deduplication... This may take a moment.');
               
               const list = await getJSON<Question[]>(env.STATE, 'questions', []);
