@@ -1758,7 +1758,7 @@ export default {
             if (questions.length === 0) {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions in database.');
             } else {
-              const action = data.split(':')[1];
+              const action = data.split(':')[2]; // admin:listAll:next -> get 'next'
               const adminKey = `admin:listAll:page:${chatId}`;
               const currentPageStr = await env.STATE.get(adminKey) || '0';
               let currentPage = parseInt(currentPageStr, 10);
