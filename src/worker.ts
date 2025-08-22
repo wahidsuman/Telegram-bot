@@ -291,7 +291,7 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
   
   await putJSON(kv, indexKey, nextIndex);
   
-  const text = `🧠 Hourly MCQ #${currentIndex + 1}\n\n${esc(question.question)}\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}`;
+  const text = `<b>🧠 Hourly MCQ #${currentIndex + 1}</b>\n\n<b>${esc(question.question)}</b>\n\n• A) ${esc(question.options.A)}\n• B) ${esc(question.options.B)}\n• C) ${esc(question.options.C)}\n• D) ${esc(question.options.D)}`;
   
   const keyboard = {
     inline_keyboard: [
@@ -308,7 +308,7 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
     ]
   };
   
-  await sendMessage(token, chatId, text, { reply_markup: keyboard });
+  await sendMessage(token, chatId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
 }
 
 async function postNextToAll(kv: KVNamespace, token: string, groupId: string, extraChannelId?: string, discussionGroupId?: string): Promise<void> {
@@ -1070,7 +1070,13 @@ export default {
                  const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
                  const header = `🏆 Daily Rank (${today})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
                  const body = top.length ? top.join('\n') : 'No activity yet.';
-                 const kb = { inline_keyboard: [[{ text: '📊 Your Stats', callback_data: 'user:stats' }]] };
+                const kb = { inline_keyboard: [
+                  [{ text: 'Get Code', callback_data: 'coupon:copy' }],
+                  [{ text: 'Bargain', callback_data: 'coupon:bargain' }],
+                  [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
+                  [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
+                  [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
+                ] };
                  await sendMessage(env.TELEGRAM_BOT_TOKEN, userId, `${header}\n${body}`, { reply_markup: kb });
                  await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '📩 Sent to your DM', true);
                } catch (e) {
@@ -1088,7 +1094,14 @@ export default {
                const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
                const header = `🏆 Daily Rank (${today})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
                const body = top.length ? top.join('\n') : 'No activity yet.';
-               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `${header}\n${body}`);
+              const kb = { inline_keyboard: [
+                [{ text: 'Get Code', callback_data: 'coupon:copy' }],
+                [{ text: 'Bargain', callback_data: 'coupon:bargain' }],
+                [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
+                [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
+                [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
+              ] };
+               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `${header}\n${body}`, { reply_markup: kb });
              }
            } else if (data === 'user:rank:monthly') {
              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
@@ -1104,7 +1117,13 @@ export default {
                  const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
                  const header = `🏅 Monthly Rank (${month})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
                  const body = top.length ? top.join('\n') : 'No activity yet.';
-                 const kb = { inline_keyboard: [[{ text: '📊 Your Stats', callback_data: 'user:stats' }]] };
+                const kb = { inline_keyboard: [
+                  [{ text: 'Get Code', callback_data: 'coupon:copy' }],
+                  [{ text: 'Bargain', callback_data: 'coupon:bargain' }],
+                  [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
+                  [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
+                  [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
+                ] };
                  await sendMessage(env.TELEGRAM_BOT_TOKEN, userId, `${header}\n${body}`, { reply_markup: kb });
                  await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '📩 Sent to your DM', true);
                } catch (e) {
@@ -1122,7 +1141,14 @@ export default {
                const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
                const header = `🏅 Monthly Rank (${month})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
                const body = top.length ? top.join('\n') : 'No activity yet.';
-               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `${header}\n${body}`);
+              const kb = { inline_keyboard: [
+                [{ text: 'Get Code', callback_data: 'coupon:copy' }],
+                [{ text: 'Bargain', callback_data: 'coupon:bargain' }],
+                [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
+                [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
+                [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
+              ] };
+               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `${header}\n${body}`, { reply_markup: kb });
              }
            } else if (data.startsWith('ans:')) {
             // MCQ answer
