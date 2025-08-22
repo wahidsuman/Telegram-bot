@@ -1763,11 +1763,12 @@ export default {
               const currentPageStr = await env.STATE.get(adminKey) || '0';
               let currentPage = parseInt(currentPageStr, 10);
               
-              console.log('Pagination debug:', { action, currentPageStr, currentPage, totalQuestions: questions.length, adminKey });
+              console.log('Pagination debug:', { action, currentPageStr, currentPage, totalQuestions: questions.length, adminKey, maxPage: Math.ceil(questions.length / 10) - 1 });
               
               if (action === 'next') {
-                currentPage = Math.min(currentPage + 1, Math.floor((questions.length - 1) / 10));
-                console.log('Next clicked, new page:', currentPage);
+                const maxPage = Math.ceil(questions.length / 10) - 1;
+                currentPage = Math.min(currentPage + 1, maxPage);
+                console.log('Next clicked, new page:', currentPage, 'maxPage:', maxPage);
               } else if (action === 'prev') {
                 currentPage = Math.max(currentPage - 1, 0);
                 console.log('Prev clicked, new page:', currentPage);
