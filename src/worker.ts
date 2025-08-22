@@ -967,7 +967,8 @@ export default {
                   [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
                   [{ text: '📣 Broadcast to Group', callback_data: 'admin:broadcast' }],
                   [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
-                  [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }]
+                  [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
+                  [{ text: '🧹 Smart Dedupe', callback_data: 'admin:smartdedupe' }]
                 ]
               };
               
@@ -1698,6 +1699,42 @@ export default {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
             await env.STATE.delete('admin:edit:idx');
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❎ Edit cancelled');
+          } else if (data === 'admin:smartdedupe') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Starting smart deduplication...');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '🔍 Starting smart deduplication... This may take a moment.');
+            
+            const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const unique: Question[] = [];
+            const removed: Question[] = [];
+            let removedCount = 0;
+            
+            for (let i = 0; i < list.length; i++) {
+              const current = list[i];
+              let isDuplicate = false;
+              
+              // Check against all previously accepted questions
+              for (const accepted of unique) {
+                if (isSimilarQuestion(current, accepted)) {
+                  isDuplicate = true;
+                  removed.push(current);
+                  removedCount++;
+                  break;
+                }
+              }
+              
+              if (!isDuplicate) {
+                unique.push(current);
+              }
+            }
+            
+            if (removedCount > 0) {
+              await putJSON(env.STATE, 'questions', unique);
+              const removedList = removed.slice(0, 5).map((q, i) => `${i + 1}. ${q.question.substring(0, 80)}...`).join('\n');
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+                `✅ Smart deduplication complete!\n\n🗑️ Removed ${removedCount} similar questions\n📊 Total questions now: ${unique.length}\n\n📝 Sample removed questions:\n${removedList}${removed.length > 5 ? '\n... and ' + (removed.length - 5) + ' more' : ''}`);
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ No similar questions found. Database is clean!');
+            }
           }
         }
         
