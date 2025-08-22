@@ -1139,8 +1139,11 @@ export default {
       } else if (url.pathname === '/tick' && request.method === 'GET') {
         await ensureKeys(env.STATE);
         await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
-        await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
-        return new Response('MCQ posted');
+        const count = Number(new URL(request.url).searchParams.get('count') || '1');
+        for (let i = 0; i < Math.max(1, Math.min(20, count)); i++) {
+          await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
+        }
+        return new Response(`MCQ posted x${Math.max(1, Math.min(20, count))}`);
       } else if (url.pathname === '/start-posting' && request.method === 'GET') {
         await ensureKeys(env.STATE);
         await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
@@ -1189,7 +1192,10 @@ export default {
     try {
       await ensureKeys(env.STATE);
       await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
-      await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
+      // Send 5 questions per schedule tick
+      for (let i = 0; i < 5; i++) {
+        await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
+      }
     } catch (error) {
       console.error('Scheduled error:', error);
     }
