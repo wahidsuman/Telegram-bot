@@ -5,6 +5,7 @@ interface Env {
   TELEGRAM_BOT_TOKEN: string;
   TARGET_GROUP_ID: string;
   TARGET_CHANNEL_ID?: string;
+  TARGET_DISCUSSION_GROUP_ID?: string;
   ADMIN_CHAT_ID: string;
   WEBHOOK_SECRET: string;
   TZ: string;
@@ -193,7 +194,7 @@ async function ensureKeys(kv: KVNamespace): Promise<void> {
   }
 }
 
-async function initializeBotIfNeeded(kv: KVNamespace, token: string, targetGroupId: string, extraChannelId?: string): Promise<void> {
+async function initializeBotIfNeeded(kv: KVNamespace, token: string, targetGroupId: string, extraChannelId?: string, discussionGroupId?: string): Promise<void> {
   const questions = await getJSON<Question[]>(kv, 'questions', []);
   if (questions.length === 0) {
     // Add sample question to bootstrap the system
@@ -213,7 +214,7 @@ async function initializeBotIfNeeded(kv: KVNamespace, token: string, targetGroup
   }
   
   // Check if we need to initialize the index
-  const chatsToInit = [targetGroupId, ...(extraChannelId ? [extraChannelId] : [])];
+  const chatsToInit = [targetGroupId, ...(extraChannelId ? [extraChannelId] : []), ...(discussionGroupId ? [discussionGroupId] : [])];
   for (const chatId of chatsToInit) {
     const indexKey = `idx:${chatId}`;
     const currentIndex = await getJSON<number>(kv, indexKey, -1);
@@ -300,10 +301,13 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
   await sendMessage(token, chatId, text, { reply_markup: keyboard });
 }
 
-async function postNextToAll(kv: KVNamespace, token: string, groupId: string, extraChannelId?: string): Promise<void> {
+async function postNextToAll(kv: KVNamespace, token: string, groupId: string, extraChannelId?: string, discussionGroupId?: string): Promise<void> {
   await postNext(kv, token, groupId);
   if (extraChannelId) {
     await postNext(kv, token, extraChannelId);
+  }
+  if (discussionGroupId) {
+    await postNext(kv, token, discussionGroupId);
   }
 }
 
@@ -670,7 +674,8 @@ export default {
           env.STATE,
           env.TELEGRAM_BOT_TOKEN,
           env.TARGET_GROUP_ID,
-          env.TARGET_CHANNEL_ID
+          env.TARGET_CHANNEL_ID,
+          env.TARGET_DISCUSSION_GROUP_ID
         );
         
         if (update.message) {
@@ -981,7 +986,7 @@ export default {
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, report);
           } else if (data === 'admin:postNow') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Posting next MCQ…');
-            await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
+            await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Posted next MCQ to all targets');
           } else if (data === 'admin:dbstatus') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
@@ -1133,12 +1138,12 @@ export default {
         return new Response('OK');
       } else if (url.pathname === '/tick' && request.method === 'GET') {
         await ensureKeys(env.STATE);
-        await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
-        await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
+        await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
+        await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
         return new Response('MCQ posted');
       } else if (url.pathname === '/start-posting' && request.method === 'GET') {
         await ensureKeys(env.STATE);
-        await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
+        await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
         return new Response('Bot initialized and first MCQ posted');
       } else if (url.pathname === '/health' && request.method === 'GET') {
         return new Response('ok');
@@ -1154,8 +1159,8 @@ export default {
   async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     try {
       await ensureKeys(env.STATE);
-      await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
-      await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
+      await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
+      await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
     } catch (error) {
       console.error('Scheduled error:', error);
     }
