@@ -230,40 +230,47 @@ async function initializeBotIfNeeded(kv: KVNamespace, token: string, targetGroup
   }
 }
 
-async function incrementStats(kv: KVNamespace, userId: number, isCorrect: boolean, tz: string): Promise<void> {
+async function incrementStatsFirstAttemptOnly(kv: KVNamespace, userId: number, qid: number, isCorrect: boolean, tz: string): Promise<void> {
   const userIdStr = userId.toString();
+  const qidStr = String(qid);
   const today = getCurrentDate(tz);
   const month = getCurrentMonth(tz);
-  
-  // Update daily stats
+
+  // Track seen attempts per period per user
+  const seenDailyKey = `seen:daily:${today}:${userIdStr}`;
+  const seenMonthlyKey = `seen:monthly:${month}:${userIdStr}`;
+  const seenDaily = await getJSON<Record<string, boolean>>(kv, seenDailyKey, {});
+  const seenMonthly = await getJSON<Record<string, boolean>>(kv, seenMonthlyKey, {});
+
+  // If already attempted this question for both periods, skip counting
+  const alreadyDaily = !!seenDaily[qidStr];
+  const alreadyMonthly = !!seenMonthly[qidStr];
+
+  // Load stats records
   const dailyKey = `stats:daily:${today}`;
-  const dailyStats = await getJSON<DayStats>(kv, dailyKey, { total: 0, users: {} });
-  
-  dailyStats.total += 1;
-  if (!dailyStats.users[userIdStr]) {
-    dailyStats.users[userIdStr] = { cnt: 0, correct: 0 };
-  }
-  dailyStats.users[userIdStr].cnt += 1;
-  if (isCorrect) {
-    dailyStats.users[userIdStr].correct += 1;
-  }
-  
-  await putJSON(kv, dailyKey, dailyStats);
-  
-  // Update monthly stats
   const monthlyKey = `stats:monthly:${month}`;
+  const dailyStats = await getJSON<DayStats>(kv, dailyKey, { total: 0, users: {} });
   const monthlyStats = await getJSON<DayStats>(kv, monthlyKey, { total: 0, users: {} });
-  
-  monthlyStats.total += 1;
-  if (!monthlyStats.users[userIdStr]) {
-    monthlyStats.users[userIdStr] = { cnt: 0, correct: 0 };
+
+  if (!alreadyDaily) {
+    dailyStats.total += 1;
+    if (!dailyStats.users[userIdStr]) dailyStats.users[userIdStr] = { cnt: 0, correct: 0 };
+    dailyStats.users[userIdStr].cnt += 1;
+    if (isCorrect) dailyStats.users[userIdStr].correct += 1;
+    seenDaily[qidStr] = true;
+    await putJSON(kv, seenDailyKey, seenDaily);
+    await putJSON(kv, dailyKey, dailyStats);
   }
-  monthlyStats.users[userIdStr].cnt += 1;
-  if (isCorrect) {
-    monthlyStats.users[userIdStr].correct += 1;
+
+  if (!alreadyMonthly) {
+    monthlyStats.total += 1;
+    if (!monthlyStats.users[userIdStr]) monthlyStats.users[userIdStr] = { cnt: 0, correct: 0 };
+    monthlyStats.users[userIdStr].cnt += 1;
+    if (isCorrect) monthlyStats.users[userIdStr].correct += 1;
+    seenMonthly[qidStr] = true;
+    await putJSON(kv, seenMonthlyKey, seenMonthly);
+    await putJSON(kv, monthlyKey, monthlyStats);
   }
-  
-  await putJSON(kv, monthlyKey, monthlyStats);
 }
 
 async function postNext(kv: KVNamespace, token: string, chatId: string): Promise<void> {
@@ -1049,7 +1056,7 @@ export default {
               const question = questions[qid];
               const isCorrect = answer === question.answer;
               
-              await incrementStats(env.STATE, userId, isCorrect, env.TZ || 'Asia/Kolkata');
+              await incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata');
               
               // Create popup in requested format
               let explanation = question.explanation;
