@@ -25,6 +25,13 @@ interface Question {
   explanation: string;
 }
 
+interface DiscountButton {
+  id: string;
+  name: string;
+  message1: string;
+  message2: string;
+}
+
 interface UserStats {
   cnt: number;
   correct: number;
@@ -85,6 +92,22 @@ function esc(str: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#x27;');
+}
+
+// Discount button management
+async function getDiscountButtons(kv: KVNamespace): Promise<DiscountButton[]> {
+  return await getJSON<DiscountButton[]>(kv, 'discount_buttons', [
+    {
+      id: 'prepladder',
+      name: 'Prepladder',
+      message1: 'P650',
+      message2: '⬆️ Copy This Code P650 To Get Best Prepladder Discounts For All The Prepladder Plans.If You Need Extra Discount You Can Click On The Contact Admin Button 🔘'
+    }
+  ]);
+}
+
+async function saveDiscountButtons(kv: KVNamespace, buttons: DiscountButton[]): Promise<void> {
+  await putJSON(kv, 'discount_buttons', buttons);
 }
 
 async function getJSON<T>(kv: KVNamespace, key: string, defaultValue: T): Promise<T> {
@@ -845,6 +868,63 @@ export default {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel', { reply_markup: keyboard });
             } else if (message.text === '/whoami') {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `You are: id=${message.from?.id}, username=@${message.from?.username || ''}`);
+            } else if (message.text === '/addbutton') {
+              const parts = message.text.split(' ');
+              if (parts.length >= 4) {
+                const name = parts[1];
+                const message1 = parts[2];
+                const message2 = parts.slice(3).join(' ');
+                const id = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+                
+                const buttons = await getDiscountButtons(env.STATE);
+                const newButton: DiscountButton = { id, name, message1, message2 };
+                buttons.push(newButton);
+                await saveDiscountButtons(env.STATE, buttons);
+                
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Added discount button: ${name}`);
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Usage: /addbutton <name> <code> <message>\nExample: /addbutton Marrow M650 "Thank you for choosing Marrow"');
+              }
+            } else if (message.text === '/listbuttons') {
+              const buttons = await getDiscountButtons(env.STATE);
+              if (buttons.length === 0) {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'No discount buttons configured.');
+              } else {
+                const list = buttons.map((btn, i) => `${i + 1}. ${btn.name} (${btn.id})\n   Code: ${btn.message1}\n   Message: ${btn.message2}`).join('\n\n');
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `📋 Discount Buttons:\n\n${list}`);
+              }
+            } else if (message.text.startsWith('/editbutton ')) {
+              const parts = message.text.split(' ');
+              if (parts.length >= 5) {
+                const id = parts[1];
+                const name = parts[2];
+                const message1 = parts[3];
+                const message2 = parts.slice(4).join(' ');
+                
+                const buttons = await getDiscountButtons(env.STATE);
+                const index = buttons.findIndex(btn => btn.id === id);
+                if (index >= 0) {
+                  buttons[index] = { id, name, message1, message2 };
+                  await saveDiscountButtons(env.STATE, buttons);
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Updated discount button: ${name}`);
+                } else {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Button with ID '${id}' not found. Use /listbuttons to see available buttons.`);
+                }
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Usage: /editbutton <id> <name> <code> <message>\nExample: /editbutton prepladder Prepladder P650 "Thank you for choosing Prepladder"');
+              }
+            } else if (message.text.startsWith('/deletebutton ')) {
+              const id = message.text.split(' ')[1];
+              const buttons = await getDiscountButtons(env.STATE);
+              const index = buttons.findIndex(btn => btn.id === id);
+              if (index >= 0) {
+                const name = buttons[index].name;
+                buttons.splice(index, 1);
+                await saveDiscountButtons(env.STATE, buttons);
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Deleted discount button: ${name}`);
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Button with ID '${id}' not found. Use /listbuttons to see available buttons.`);
+              }
             } else if (message.text) {
               // Admin free-text template upload - try multiple questions first
               const multipleQuestions = parseMultipleQuestions(message.text);
@@ -979,7 +1059,7 @@ export default {
                 const username = message.from?.username ? `@${message.from.username}` : '—';
                 
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
-                  '💬 Got it! Admin will contact you soon for bargaining. You can also click the "Bargain" button below to provide your WhatsApp number for faster response. 🕐');
+                  '💬 Got it! Admin will contact you soon for bargaining. You can also click the "Contact Admin" button below to provide your WhatsApp number for faster response. 🕐');
                 
                 // Notify admin about text-based bargain request
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, 
@@ -989,7 +1069,7 @@ export default {
                               const keyboard = {
                 inline_keyboard: [
                   [{ text: 'Get Code', callback_data: 'coupon:copy' }],
-                  [{ text: 'Bargain', callback_data: 'coupon:bargain' }],
+                  [{ text: 'Contact Admin', callback_data: 'coupon:bargain' }],
                   [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
                   [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
                   [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
@@ -1035,7 +1115,7 @@ export default {
                    const msg = `📊 Your Stats\n\nToday (${today}): ${meD.cnt} attempted, ${meD.correct} correct\nThis Month (${month}): ${meM.cnt} attempted, ${meM.correct} correct`;
                    const kb = { inline_keyboard: [
                      [{ text: 'Get Code', callback_data: 'coupon:copy' }],
-                     [{ text: 'Bargain', callback_data: 'coupon:bargain' }],
+                     [{ text: 'Contact Admin', callback_data: 'coupon:bargain' }],
                      [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
                      [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
                      [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
@@ -1072,7 +1152,7 @@ export default {
                  const body = top.length ? top.join('\n') : 'No activity yet.';
                 const kb = { inline_keyboard: [
                   [{ text: 'Get Code', callback_data: 'coupon:copy' }],
-                  [{ text: 'Bargain', callback_data: 'coupon:bargain' }],
+                  [{ text: 'Contact Admin', callback_data: 'coupon:bargain' }],
                   [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
                   [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
                   [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
@@ -1096,7 +1176,7 @@ export default {
                const body = top.length ? top.join('\n') : 'No activity yet.';
               const kb = { inline_keyboard: [
                 [{ text: 'Get Code', callback_data: 'coupon:copy' }],
-                [{ text: 'Bargain', callback_data: 'coupon:bargain' }],
+                [{ text: 'Contact Admin', callback_data: 'coupon:bargain' }],
                 [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
                 [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
                 [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
@@ -1119,7 +1199,7 @@ export default {
                  const body = top.length ? top.join('\n') : 'No activity yet.';
                 const kb = { inline_keyboard: [
                   [{ text: 'Get Code', callback_data: 'coupon:copy' }],
-                  [{ text: 'Bargain', callback_data: 'coupon:bargain' }],
+                  [{ text: 'Contact Admin', callback_data: 'coupon:bargain' }],
                   [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
                   [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
                   [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
@@ -1143,7 +1223,7 @@ export default {
                const body = top.length ? top.join('\n') : 'No activity yet.';
               const kb = { inline_keyboard: [
                 [{ text: 'Get Code', callback_data: 'coupon:copy' }],
-                [{ text: 'Bargain', callback_data: 'coupon:bargain' }],
+                [{ text: 'Contact Admin', callback_data: 'coupon:bargain' }],
                 [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
                 [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
                 [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
@@ -1179,23 +1259,45 @@ export default {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question not found', true);
             }
           } else if (data === 'coupon:copy') {
-            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'P650 coupon code copied');
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             
-            // Send the coupon code
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'P650');
+            // Show discount options menu
+            const buttons = await getDiscountButtons(env.STATE);
+            const keyboard = {
+              inline_keyboard: buttons.map(btn => [{
+                text: btn.name,
+                callback_data: `discount:${btn.id}`
+              }])
+            };
             
-            // Send follow-up message
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
-              '⬆️ Copy This  Code P650 To Get Best Prepladder Discounts For All The Prepladder Plans.If You Need Extra Discount You Can Click On The Bargain Button 🔘');
+              '🎯 Choose your discount provider:', { reply_markup: keyboard });
+              
+          } else if (data.startsWith('discount:')) {
+            const buttonId = data.split(':')[1];
+            const buttons = await getDiscountButtons(env.STATE);
+            const button = buttons.find(btn => btn.id === buttonId);
             
-            // Notify admin with username
-            const userName = `${query.from.first_name}${query.from.last_name ? ' ' + query.from.last_name : ''}`;
-            const usernameLink = query.from.username ? `<a href="https://t.me/${query.from.username}">@${query.from.username}</a>` : '—';
-            const uidLink = `<a href="tg://user?id=${userId}">${userId}</a>`;
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, 
-              `💰 Code Used: P650\n\nUser: ${userName}\nUsername: ${usernameLink}\nUser ID: ${uidLink}\n\nUser has copied the discount code!`,
-              { reply_markup: { inline_keyboard: [[{ text: '↩️ Reply to user', callback_data: `admin:reply:${userId}` }]] } }
-            );
+            if (button) {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, `${button.name} code copied`);
+              
+              // Send the coupon code
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, button.message1);
+              
+              // Send follow-up message
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, button.message2);
+              
+              // Notify admin with username
+              const userName = `${query.from.first_name}${query.from.last_name ? ' ' + query.from.last_name : ''}`;
+              const usernameLink = query.from.username ? `<a href="https://t.me/${query.from.username}">@${query.from.username}</a>` : '—';
+              const uidLink = `<a href="tg://user?id=${userId}">${userId}</a>`;
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, 
+                `💰 Code Used: ${button.message1} (${button.name})\n\nUser: ${userName}\nUsername: ${usernameLink}\nUser ID: ${uidLink}\n\nUser has copied the discount code!`,
+                { reply_markup: { inline_keyboard: [[{ text: '↩️ Reply to user', callback_data: `admin:reply:${userId}` }]] } }
+              );
+            } else {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Discount option not found', true);
+            }
               
                           } else if (data === 'coupon:bargain') {
           // Set state to wait for WhatsApp number
