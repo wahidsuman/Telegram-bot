@@ -975,6 +975,7 @@ export default {
           const userId = message.from?.id;
           
           const isAdmin = chatId.toString() === env.ADMIN_CHAT_ID || (env.ADMIN_USERNAME && message.from?.username && (`@${message.from.username}`.toLowerCase() === `@${env.ADMIN_USERNAME}`.toLowerCase()));
+          console.log('Admin check:', { chatId, adminChatId: env.ADMIN_CHAT_ID, username: message.from?.username, adminUsername: env.ADMIN_USERNAME, isAdmin });
           if (isAdmin) {
             // Admin commands
             const broadcastPending = await env.STATE.get('admin:broadcast:pending');
@@ -1033,10 +1034,8 @@ export default {
               } else if (editDiscountPending && message.text) {
                 await handleDiscountButtonEditing(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId, message.text, editDiscountPending);
                 return new Response('OK');
-              }
-            }
-            
-            if (message.text === '/start' || message.text === '/admin') {
+              } else if (message.text === '/start' || message.text === '/admin') {
+              console.log('Admin panel requested by:', chatId, 'User:', message.from?.username);
               const keyboard = {
                 inline_keyboard: [
                   [{ text: '📤 Upload Questions', callback_data: 'admin:upload' }],
@@ -1274,6 +1273,7 @@ export default {
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, errorMessage);
               }
             }
+          }
           } else if (message.chat.type === 'private') {
             // Check if user is waiting to provide WhatsApp number FIRST
             const bargainPending = await env.STATE.get(`bargain:${userId}`);
@@ -1980,6 +1980,15 @@ export default {
         return new Response('Bot initialized and first MCQ posted');
       } else if (url.pathname === '/health' && request.method === 'GET') {
         return new Response('ok');
+      } else if (url.pathname === '/admin-check' && request.method === 'GET') {
+        return new Response(JSON.stringify({
+          adminChatId: env.ADMIN_CHAT_ID,
+          adminUsername: env.ADMIN_USERNAME,
+          hasAdminChatId: !!env.ADMIN_CHAT_ID,
+          hasAdminUsername: !!env.ADMIN_USERNAME
+        }, null, 2), {
+          headers: { 'Content-Type': 'application/json' }
+        });
       } else if (url.pathname === '/sync-targets' && request.method === 'GET') {
         // Reset all targets to start from question 0
         await putJSON(env.STATE, `idx:${env.TARGET_GROUP_ID}`, 0);
