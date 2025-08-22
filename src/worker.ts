@@ -1157,6 +1157,25 @@ export default {
           await putJSON(env.STATE, `idx:${env.TARGET_DISCUSSION_GROUP_ID}`, 0);
         }
         return new Response('All targets reset to question index 0 - they will now post the same questions');
+      } else if (url.pathname === '/dedupe' && request.method === 'GET') {
+        // Dedupe questions in KV
+        const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+        const seen = new Set<string>();
+        const unique: Question[] = [];
+        let removed = 0;
+        for (const q of list) {
+          const key = buildQuestionKey(q);
+          if (seen.has(key)) {
+            removed++;
+          } else {
+            seen.add(key);
+            unique.push(q);
+          }
+        }
+        if (removed > 0) {
+          await putJSON(env.STATE, 'questions', unique);
+        }
+        return new Response(`Dedupe complete. Removed ${removed} duplicate(s). Total now: ${unique.length}`);
       }
       
       return new Response('Not Found', { status: 404 });
