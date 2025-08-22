@@ -1003,7 +1003,7 @@ export default {
                   [{ text: '📈 Monthly Report', callback_data: 'admin:monthly' }],
                   [{ text: '⏭️ Post Next Now', callback_data: 'admin:postNow' }],
                   [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
-                  [{ text: '📣 Broadcast to Group', callback_data: 'admin:broadcast' }],
+                  [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
                   [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
@@ -1052,9 +1052,47 @@ export default {
             }
             if (broadcastPending === '1') {
               try {
-                await copyMessage(env.TELEGRAM_BOT_TOKEN, chatId, message.message_id, env.TARGET_GROUP_ID);
+                let successCount = 0;
+                let errorCount = 0;
+                
+                // Broadcast to main group
+                try {
+                  await copyMessage(env.TELEGRAM_BOT_TOKEN, chatId, message.message_id, env.TARGET_GROUP_ID);
+                  successCount++;
+                } catch (error) {
+                  errorCount++;
+                  console.error('Broadcast to main group failed:', error);
+                }
+                
+                // Broadcast to channel if configured
+                if (env.TARGET_CHANNEL_ID) {
+                  try {
+                    await copyMessage(env.TELEGRAM_BOT_TOKEN, chatId, message.message_id, env.TARGET_CHANNEL_ID);
+                    successCount++;
+                  } catch (error) {
+                    errorCount++;
+                    console.error('Broadcast to channel failed:', error);
+                  }
+                }
+                
+                // Broadcast to discussion group if configured
+                if (env.TARGET_DISCUSSION_GROUP_ID) {
+                  try {
+                    await copyMessage(env.TELEGRAM_BOT_TOKEN, chatId, message.message_id, env.TARGET_DISCUSSION_GROUP_ID);
+                    successCount++;
+                  } catch (error) {
+                    errorCount++;
+                    console.error('Broadcast to discussion group failed:', error);
+                  }
+                }
+                
                 await env.STATE.delete('admin:broadcast:pending');
-                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ Broadcasted to group');
+                
+                if (errorCount === 0) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Broadcasted to all ${successCount} targets successfully`);
+                } else {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `⚠️ Broadcast completed with errors\n✅ Success: ${successCount} targets\n❌ Failed: ${errorCount} targets`);
+                }
               } catch (error) {
                 await env.STATE.delete('admin:broadcast:pending');
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Broadcast failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -1102,7 +1140,7 @@ export default {
                   [{ text: '📈 Monthly Report', callback_data: 'admin:monthly' }],
                   [{ text: '⏭️ Post Next Now', callback_data: 'admin:postNow' }],
                   [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
-                  [{ text: '📣 Broadcast to Group', callback_data: 'admin:broadcast' }],
+                  [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
                   [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
@@ -1655,7 +1693,7 @@ export default {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             await env.STATE.put('admin:broadcast:pending', '1');
             const kb = { inline_keyboard: [[{ text: '✖️ Cancel', callback_data: 'admin:broadcastCancel' }]] };
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Send the message or media to broadcast to the group.', { reply_markup: kb });
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Send the message or media to broadcast to all targets (group, channel, discussion group).', { reply_markup: kb });
           } else if (data.startsWith('admin:reply:')) {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             const targetUserId = data.split(':')[2];
