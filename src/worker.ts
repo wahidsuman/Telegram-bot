@@ -403,6 +403,42 @@ function buildQuestionKey(q: Question): string {
   ).toLowerCase();
 }
 
+function isSimilarQuestion(q1: Question, q2: Question): boolean {
+  // Normalize questions for comparison
+  const normalizeText = (text: string) => text.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+  
+  const q1Normalized = normalizeText(q1.question);
+  const q2Normalized = normalizeText(q2.question);
+  
+  // Check if questions are very similar (allowing for minor variations)
+  const similarityThreshold = 0.8; // 80% similarity
+  
+  // Simple similarity check - count common words
+  const q1Words = new Set(q1Normalized.split(' ').filter(w => w.length > 3));
+  const q2Words = new Set(q2Normalized.split(' ').filter(w => w.length > 3));
+  
+  const intersection = new Set([...q1Words].filter(x => q2Words.has(x)));
+  const union = new Set([...q1Words, ...q2Words]);
+  
+  const similarity = intersection.size / union.size;
+  
+  // Also check if answers are the same (strong indicator of duplicate)
+  const sameAnswer = q1.answer === q2.answer;
+  
+  // Check if options are similar (allowing for reordering)
+  const q1Options = Object.values(q1.options).map(normalizeText).sort();
+  const q2Options = Object.values(q2.options).map(normalizeText).sort();
+  const optionsSimilar = JSON.stringify(q1Options) === JSON.stringify(q2Options);
+  
+  // Consider similar if:
+  // 1. Questions are 80% similar AND have same answer, OR
+  // 2. Questions are 90% similar, OR
+  // 3. Questions are 70% similar AND have same answer AND same options
+  return (similarity >= 0.8 && sameAnswer) || 
+         similarity >= 0.9 || 
+         (similarity >= 0.7 && sameAnswer && optionsSimilar);
+}
+
 function parseAdminTemplate(text: string): { question: string; options: { A: string; B: string; C: string; D: string }; explanation: string; answer?: 'A' | 'B' | 'C' | 'D' } | null {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const data: Record<string, string> = {};
@@ -924,6 +960,41 @@ export default {
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Deleted discount button: ${name}`);
               } else {
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Button with ID '${id}' not found. Use /listbuttons to see available buttons.`);
+              }
+            } else if (message.text === '/smartdedupe') {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '🔍 Starting smart deduplication... This may take a moment.');
+              
+              const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+              const unique: Question[] = [];
+              const removed: Question[] = [];
+              let removedCount = 0;
+              
+              for (let i = 0; i < list.length; i++) {
+                const current = list[i];
+                let isDuplicate = false;
+                
+                // Check against all previously accepted questions
+                for (const accepted of unique) {
+                  if (isSimilarQuestion(current, accepted)) {
+                    isDuplicate = true;
+                    removed.push(current);
+                    removedCount++;
+                    break;
+                  }
+                }
+                
+                if (!isDuplicate) {
+                  unique.push(current);
+                }
+              }
+              
+              if (removedCount > 0) {
+                await putJSON(env.STATE, 'questions', unique);
+                const removedList = removed.slice(0, 5).map((q, i) => `${i + 1}. ${q.question.substring(0, 80)}...`).join('\n');
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                  `✅ Smart deduplication complete!\n\n🗑️ Removed ${removedCount} similar questions\n📊 Total questions now: ${unique.length}\n\n📝 Sample removed questions:\n${removedList}${removed.length > 5 ? '\n... and ' + (removed.length - 5) + ' more' : ''}`);
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ No similar questions found. Database is clean!');
               }
             } else if (message.text) {
               // Admin free-text template upload - try multiple questions first
@@ -1559,6 +1630,37 @@ export default {
           await putJSON(env.STATE, 'questions', unique);
         }
         return new Response(`Dedupe complete. Removed ${removed} duplicate(s). Total now: ${unique.length}`);
+      } else if (url.pathname === '/smart-dedupe' && request.method === 'GET') {
+        // Advanced dedupe that detects similar questions (like shuffled ones from ChatGPT)
+        const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+        const unique: Question[] = [];
+        const removed: Question[] = [];
+        let removedCount = 0;
+        
+        for (let i = 0; i < list.length; i++) {
+          const current = list[i];
+          let isDuplicate = false;
+          
+          // Check against all previously accepted questions
+          for (const accepted of unique) {
+            if (isSimilarQuestion(current, accepted)) {
+              isDuplicate = true;
+              removed.push(current);
+              removedCount++;
+              break;
+            }
+          }
+          
+          if (!isDuplicate) {
+            unique.push(current);
+          }
+        }
+        
+        if (removedCount > 0) {
+          await putJSON(env.STATE, 'questions', unique);
+        }
+        
+        return new Response(`Smart dedupe complete.\n\nRemoved ${removedCount} similar questions.\nTotal now: ${unique.length}\n\nRemoved questions:\n${removed.slice(0, 10).map((q, i) => `${i + 1}. ${q.question.substring(0, 100)}...`).join('\n')}${removed.length > 10 ? '\n... and ' + (removed.length - 10) + ' more' : ''}`);
       }
       
       return new Response('Not Found', { status: 404 });
