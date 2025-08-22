@@ -1027,8 +1027,30 @@ export default {
               }
             }
           } else if (message.chat.type === 'private') {
-            // Handle all user messages - show buttons for any message
-            if (message.text) {
+            // Check if user is waiting to provide WhatsApp number FIRST
+            const bargainPending = await env.STATE.get(`bargain:${userId}`);
+            if (bargainPending === 'pending' && message.text) {
+              // Validate WhatsApp number format (any valid phone number)
+              const phoneRegex = /^[\+]?[1-9]\d{1,14}$/;
+              if (phoneRegex.test(message.text.replace(/\s/g, ''))) {
+                // Store the WhatsApp number and notify admin
+                await env.STATE.put(`whatsapp:${userId}`, message.text);
+                await env.STATE.delete(`bargain:${userId}`);
+                
+                const userName = `${message.from?.first_name}${message.from?.last_name ? ' ' + message.from.last_name : ''}`;
+                const username = message.from?.username ? `@${message.from.username}` : '—';
+                
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                  '✅ Thank you! Your WhatsApp number has been saved successfully.\n\n🛑 Stay still! Admin will reply you soon for bargaining.\n\n⏰ Please wait patiently while we process your request. 🕐');
+                
+                // Notify admin
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, 
+                  `📱 WhatsApp Number Received\n\nUser: ${userName}\nUsername: ${username}\nUser ID: ${userId}\nWhatsApp: ${message.text}\n\nReady for bargaining!`);
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                  '❌ Please send a valid WhatsApp number.\n\nFormat: Any valid phone number\n\nExamples: 9876543210, +919876543210, 919876543210');
+              }
+            } else if (message.text) {
               const keyboard = {
                 inline_keyboard: [
                   [{ text: 'Get Code', callback_data: 'coupon:copy' }],
