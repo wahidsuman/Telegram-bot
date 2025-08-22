@@ -1027,8 +1027,8 @@ export default {
               }
             }
           } else if (message.chat.type === 'private') {
-            // Handle /start command for regular users
-            if (message.text === '/start') {
+            // Handle all user messages - show buttons for any message
+            if (message.text) {
               const keyboard = {
                 inline_keyboard: [
                   [{ text: 'Get Code', callback_data: 'coupon:copy' }],
