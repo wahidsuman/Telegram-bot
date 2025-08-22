@@ -300,7 +300,8 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
         { text: 'D', callback_data: `ans:${currentIndex}:D` }
       ],
       [
-        { text: '💬 Join Discussion', url: 'https://t.me/+u0P8X-ZWHU1jMDQ1' }
+        { text: '💬 Join Discussion', url: 'https://t.me/+u0P8X-ZWHU1jMDQ1' },
+        { text: '📊 Your Stats', callback_data: 'user:stats' }
       ]
     ]
   };
