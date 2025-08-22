@@ -1747,8 +1747,9 @@ export default {
             if (questions.length === 0) {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions in database.');
             } else {
-              // Start with first 10 questions
-              await env.STATE.put('admin:listAll:page', '0');
+              // Start with first 10 questions - use admin-specific key
+              const adminKey = `admin:listAll:page:${chatId}`;
+              await env.STATE.put(adminKey, '0');
               await showQuestionsPage(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId!, questions, 0);
             }
           } else if (data.startsWith('admin:listAll:')) {
@@ -1758,10 +1759,11 @@ export default {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions in database.');
             } else {
               const action = data.split(':')[1];
-              const currentPageStr = await env.STATE.get('admin:listAll:page') || '0';
+              const adminKey = `admin:listAll:page:${chatId}`;
+              const currentPageStr = await env.STATE.get(adminKey) || '0';
               let currentPage = parseInt(currentPageStr, 10);
               
-              console.log('Pagination debug:', { action, currentPageStr, currentPage, totalQuestions: questions.length });
+              console.log('Pagination debug:', { action, currentPageStr, currentPage, totalQuestions: questions.length, adminKey });
               
               if (action === 'next') {
                 currentPage = Math.min(currentPage + 1, Math.floor((questions.length - 1) / 10));
@@ -1770,13 +1772,13 @@ export default {
                 currentPage = Math.max(currentPage - 1, 0);
                 console.log('Prev clicked, new page:', currentPage);
               } else if (action === 'close') {
-                await env.STATE.delete('admin:listAll:page');
+                await env.STATE.delete(adminKey);
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Closed question list');
                 return new Response('OK');
               }
               
-              console.log('Saving page state:', currentPage);
-              await env.STATE.put('admin:listAll:page', String(currentPage));
+              console.log('Saving page state:', currentPage, 'to key:', adminKey);
+              await env.STATE.put(adminKey, String(currentPage));
               await showQuestionsPage(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId!, questions, currentPage);
             }
           } else if (data.startsWith('admin:del:')) {
