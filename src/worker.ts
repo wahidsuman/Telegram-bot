@@ -2022,6 +2022,42 @@ export default {
         return new Response('Bot initialized and first MCQ posted');
       } else if (url.pathname === '/health' && request.method === 'GET') {
         return new Response('ok');
+      } else if (url.pathname === '/test' && request.method === 'GET') {
+        return new Response(JSON.stringify({
+          message: 'Worker is running',
+          timestamp: new Date().toISOString(),
+          webhookUrl: 'https://telegram-mcq-bot.telegram-mcq-bot-wahid.workers.dev/webhook'
+        }, null, 2), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } else if (url.pathname === '/setup-webhook' && request.method === 'GET') {
+        try {
+          const webhookUrl = 'https://telegram-mcq-bot.telegram-mcq-bot-wahid.workers.dev/webhook';
+          const secretToken = env.WEBHOOK_SECRET;
+          const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/setWebhook`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              url: webhookUrl,
+              secret_token: secretToken
+            })
+          });
+          const result = await response.json();
+          return new Response(JSON.stringify({
+            success: result.ok,
+            result: result,
+            webhookUrl: webhookUrl
+          }, null, 2), {
+            headers: { 'Content-Type': 'application/json' }
+          });
+        } catch (error) {
+          return new Response(JSON.stringify({
+            error: error instanceof Error ? error.message : 'Unknown error',
+            webhookUrl: 'https://telegram-mcq-bot.telegram-mcq-bot-wahid.workers.dev/webhook'
+          }, null, 2), {
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
       } else if (url.pathname === '/admin-check' && request.method === 'GET') {
         return new Response(JSON.stringify({
           adminChatId: env.ADMIN_CHAT_ID,
