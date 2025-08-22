@@ -1034,8 +1034,11 @@ export default {
                    const meM = monthly.users[String(userId)] || { cnt: 0, correct: 0 };
                    const msg = `📊 Your Stats\n\nToday (${today}): ${meD.cnt} attempted, ${meD.correct} correct\nThis Month (${month}): ${meM.cnt} attempted, ${meM.correct} correct`;
                    const kb = { inline_keyboard: [
+                     [{ text: 'Get Code', callback_data: 'coupon:copy' }],
+                     [{ text: 'Bargain', callback_data: 'coupon:bargain' }],
                      [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
-                     [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }]
+                     [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
+                     [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
                    ] };
                    await sendMessage(env.TELEGRAM_BOT_TOKEN, userId, msg, { reply_markup: kb });
                    await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '📩 Sent to your DM', true);
