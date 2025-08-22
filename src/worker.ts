@@ -1080,7 +1080,7 @@ export default {
                 const list = buttons.map((btn, i) => `${i + 1}. ${btn.name} (${btn.id})\n   Code: ${btn.message1}\n   Message: ${btn.message2}`).join('\n\n');
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `📋 Discount Buttons:\n\n${list}`);
               }
-            } else if (message.text.startsWith('/editbutton ')) {
+            } else if (message.text && message.text.startsWith('/editbutton ')) {
               const parts = message.text.split(' ');
               if (parts.length >= 5) {
                 const id = parts[1];
@@ -1100,7 +1100,7 @@ export default {
               } else {
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Usage: /editbutton <id> <name> <code> <message>\nExample: /editbutton prepladder Prepladder P650 "Thank you for choosing Prepladder"');
               }
-            } else if (message.text.startsWith('/deletebutton ')) {
+            } else if (message.text && message.text.startsWith('/deletebutton ')) {
               const id = message.text.split(' ')[1];
               const buttons = await getDiscountButtons(env.STATE);
               const index = buttons.findIndex(btn => btn.id === id);
