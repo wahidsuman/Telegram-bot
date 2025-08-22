@@ -6,6 +6,7 @@ interface Env {
   TARGET_GROUP_ID: string;
   TARGET_CHANNEL_ID?: string;
   TARGET_DISCUSSION_GROUP_ID?: string;
+  BOT_USERNAME?: string;
   ADMIN_CHAT_ID: string;
   WEBHOOK_SECRET: string;
   TZ: string;
@@ -301,7 +302,7 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
       ],
       [
         { text: '💬 Join Discussion', url: 'https://t.me/+u0P8X-ZWHU1jMDQ1' },
-        { text: '📊 Your Stats', callback_data: 'user:stats' }
+        { text: '📊 Your Stats', url: `${env.BOT_USERNAME ? `https://t.me/${env.BOT_USERNAME}` : 'https://t.me'}` }
       ]
     ]
   };
