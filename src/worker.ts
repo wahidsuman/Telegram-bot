@@ -1322,7 +1322,7 @@ export default {
           await env.STATE.put(`bargain:${query.from.id}`, 'pending');
           
           await sendMessage(env.TELEGRAM_BOT_TOKEN, query.from.id, 
-            'Wait a sec… Admin is loading 🤖💭\nPrepare your ultimate bargaining attack 💣😂\nDiscount battle begins soon! ⚔️\n📲 Please drop your WhatsApp number so Admin can contact you.');
+            'Send your WhatsApp number below , admin will contact you soon');
             
           } else if (data === 'admin:upload') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
