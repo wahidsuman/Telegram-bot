@@ -1062,9 +1062,11 @@ export default {
                 // Notify admin
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, 
                   `📱 WhatsApp Number Received\n\nUser: ${userName}\nUsername: ${username}\nUser ID: ${userId}\nWhatsApp: ${message.text}\n\nReady for bargaining!`);
+                return new Response('OK');
               } else {
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
                   '❌ Please send a valid WhatsApp number.\n\nFormat: Any valid phone number\n\nExamples: 9876543210, +919876543210, 919876543210');
+                return new Response('OK');
               }
             } else {
               // Check if user is asking for bargain via text
