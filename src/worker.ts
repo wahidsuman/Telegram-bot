@@ -386,10 +386,12 @@ function formatQuestionPreview(q: Question, index: number): string {
 }
 
 async function showQuestionsPage(kv: KVNamespace, token: string, chatId: number, questions: Question[], page: number): Promise<void> {
+  console.log('showQuestionsPage called:', { page, totalQuestions: questions.length });
   const questionsPerPage = 10;
   const startIndex = page * questionsPerPage;
   const endIndex = Math.min(startIndex + questionsPerPage, questions.length);
   const pageQuestions = questions.slice(startIndex, endIndex);
+  console.log('Page calculation:', { startIndex, endIndex, pageQuestionsLength: pageQuestions.length });
   
   let message = `📚 All Questions (Page ${page + 1}/${Math.ceil(questions.length / questionsPerPage)})\n\n`;
   message += `Showing questions ${startIndex + 1}-${endIndex} of ${questions.length}\n\n`;
@@ -1759,16 +1761,21 @@ export default {
               const currentPageStr = await env.STATE.get('admin:listAll:page') || '0';
               let currentPage = parseInt(currentPageStr, 10);
               
+              console.log('Pagination debug:', { action, currentPageStr, currentPage, totalQuestions: questions.length });
+              
               if (action === 'next') {
                 currentPage = Math.min(currentPage + 1, Math.floor((questions.length - 1) / 10));
+                console.log('Next clicked, new page:', currentPage);
               } else if (action === 'prev') {
                 currentPage = Math.max(currentPage - 1, 0);
+                console.log('Prev clicked, new page:', currentPage);
               } else if (action === 'close') {
                 await env.STATE.delete('admin:listAll:page');
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Closed question list');
                 return new Response('OK');
               }
               
+              console.log('Saving page state:', currentPage);
               await env.STATE.put('admin:listAll:page', String(currentPage));
               await showQuestionsPage(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId!, questions, currentPage);
             }
