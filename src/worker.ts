@@ -303,7 +303,7 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
       ],
       [
         { text: '💬 Join Discussion', url: 'https://t.me/+u0P8X-ZWHU1jMDQ1' },
-        { text: '📊 Your Stats', url: `${env.BOT_USERNAME ? `https://t.me/${env.BOT_USERNAME}` : 'https://t.me'}` }
+        { text: '📊 Your Stats', callback_data: 'user:stats' }
       ]
     ]
   };
@@ -1025,7 +1025,24 @@ export default {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
               if (chatId && chatId < 0) {
                 const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
-                await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, `Open ${uname} to view your stats.`, true);
+                                 try {
+                   const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
+                   const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
+                   const daily = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
+                   const monthly = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
+                   const meD = daily.users[String(userId)] || { cnt: 0, correct: 0 };
+                   const meM = monthly.users[String(userId)] || { cnt: 0, correct: 0 };
+                   const msg = `📊 Your Stats\n\nToday (${today}): ${meD.cnt} attempted, ${meD.correct} correct\nThis Month (${month}): ${meM.cnt} attempted, ${meM.correct} correct`;
+                   const kb = { inline_keyboard: [
+                     [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
+                     [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }]
+                   ] };
+                   await sendMessage(env.TELEGRAM_BOT_TOKEN, userId, msg, { reply_markup: kb });
+                   await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '📩 Sent to your DM', true);
+                 } catch (e) {
+                   const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
+                   await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, `Please start ${uname} and try again.`, true);
+                 }
               } else {
                 const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
                 const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
@@ -1039,8 +1056,24 @@ export default {
                        } else if (data === 'user:rank:daily') {
              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
              if (chatId && chatId < 0) {
-               const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
-               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, `Open ${uname} to view daily ranks.`, true);
+               try {
+                 const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
+                 const stats = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
+                 const entries = Object.entries(stats.users).map(([uid, s]) => ({ uid, cnt: s.cnt, correct: s.correct }));
+                 entries.sort((a, b) => b.cnt - a.cnt || b.correct - a.correct);
+                 const userIndex = entries.findIndex(e => e.uid === String(userId));
+                 const rank = userIndex >= 0 ? userIndex + 1 : '—';
+                 const me = stats.users[String(userId)] || { cnt: 0, correct: 0 };
+                 const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
+                 const header = `🏆 Daily Rank (${today})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
+                 const body = top.length ? top.join('\n') : 'No activity yet.';
+                 const kb = { inline_keyboard: [[{ text: '📊 Your Stats', callback_data: 'user:stats' }]] };
+                 await sendMessage(env.TELEGRAM_BOT_TOKEN, userId, `${header}\n${body}`, { reply_markup: kb });
+                 await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '📩 Sent to your DM', true);
+               } catch (e) {
+                 const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
+                 await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, `Please start ${uname} and try again.`, true);
+               }
              } else {
                const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
                const stats = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
@@ -1057,8 +1090,24 @@ export default {
            } else if (data === 'user:rank:monthly') {
              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
              if (chatId && chatId < 0) {
-               const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
-               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, `Open ${uname} to view monthly ranks.`, true);
+               try {
+                 const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
+                 const stats = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
+                 const entries = Object.entries(stats.users).map(([uid, s]) => ({ uid, cnt: s.cnt, correct: s.correct }));
+                 entries.sort((a, b) => b.cnt - a.cnt || b.correct - a.correct);
+                 const userIndex = entries.findIndex(e => e.uid === String(userId));
+                 const rank = userIndex >= 0 ? userIndex + 1 : '—';
+                 const me = stats.users[String(userId)] || { cnt: 0, correct: 0 };
+                 const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
+                 const header = `🏅 Monthly Rank (${month})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
+                 const body = top.length ? top.join('\n') : 'No activity yet.';
+                 const kb = { inline_keyboard: [[{ text: '📊 Your Stats', callback_data: 'user:stats' }]] };
+                 await sendMessage(env.TELEGRAM_BOT_TOKEN, userId, `${header}\n${body}`, { reply_markup: kb });
+                 await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '📩 Sent to your DM', true);
+               } catch (e) {
+                 const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
+                 await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, `Please start ${uname} and try again.`, true);
+               }
              } else {
                const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
                const stats = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
