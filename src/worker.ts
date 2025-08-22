@@ -291,7 +291,7 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
   
   await putJSON(kv, indexKey, nextIndex);
   
-  const text = `<b>🧠 Hourly MCQ #${currentIndex + 1}</b>\n\n<b>${esc(question.question)}</b>\n\n• A) ${esc(question.options.A)}\n• B) ${esc(question.options.B)}\n• C) ${esc(question.options.C)}\n• D) ${esc(question.options.D)}`;
+  const text = `<b>🧠 Hourly MCQ #${currentIndex + 1}</b>\n\n<b>${esc(question.question)}</b>\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}`;
   
   const keyboard = {
     inline_keyboard: [
