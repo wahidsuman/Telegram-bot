@@ -8,6 +8,7 @@ interface Env {
   TARGET_DISCUSSION_GROUP_ID?: string;
   BOT_USERNAME?: string;
   ADMIN_CHAT_ID: string;
+  ADMIN_USERNAME?: string;
   WEBHOOK_SECRET: string;
   TZ: string;
 }
@@ -785,7 +786,8 @@ export default {
           const chatId = message.chat.id;
           const userId = message.from?.id;
           
-          if (chatId.toString() === env.ADMIN_CHAT_ID) {
+          const isAdmin = chatId.toString() === env.ADMIN_CHAT_ID || (env.ADMIN_USERNAME && message.from?.username && (`@${message.from.username}`.toLowerCase() === `@${env.ADMIN_USERNAME}`.toLowerCase()));
+          if (isAdmin) {
             // Admin commands
             const broadcastPending = await env.STATE.get('admin:broadcast:pending');
             const editIdxStr = await env.STATE.get('admin:edit:idx');
@@ -832,7 +834,7 @@ export default {
               } catch (error) {
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Edit failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
               }
-            } else if (message.text === '/start') {
+            } else if (message.text === '/start' || message.text === '/admin') {
               const keyboard = {
                 inline_keyboard: [
                   [{ text: '📤 Upload Questions', callback_data: 'admin:upload' }],
@@ -847,6 +849,8 @@ export default {
               };
               
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel', { reply_markup: keyboard });
+            } else if (message.text === '/whoami') {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `You are: id=${message.from?.id}, username=@${message.from?.username || ''}`);
             } else if (message.text) {
               // Admin free-text template upload - try multiple questions first
               const multipleQuestions = parseMultipleQuestions(message.text);
@@ -1005,7 +1009,7 @@ export default {
             }
           }
           // Admin command: /msg <userId> <text>
-          if (chatId.toString() === env.ADMIN_CHAT_ID && message.text && message.text.startsWith('/msg ')) {
+          if (isAdmin && message.text && message.text.startsWith('/msg ')) {
             const rest = message.text.slice(5).trim();
             const sp = rest.indexOf(' ');
             if (sp > 0) {
