@@ -773,13 +773,7 @@ export default {
         const update: TelegramUpdate = await request.json();
         
         await ensureKeys(env.STATE);
-        await initializeBotIfNeeded(
-          env.STATE,
-          env.TELEGRAM_BOT_TOKEN,
-          env.TARGET_GROUP_ID,
-          env.TARGET_CHANNEL_ID,
-          env.TARGET_DISCUSSION_GROUP_ID
-        );
+        await ensureShardedInitialized(env.STATE);
         
         if (update.message) {
           const message = update.message;
@@ -1068,9 +1062,13 @@ export default {
             const [, qidStr, answer] = data.split(':');
             const qid = parseInt(qidStr);
             
-            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
-            if (qid >= 0 && qid < questions.length) {
-              const question = questions[qid];
+            // Prefer sharded read for performance; fallback to legacy array
+            let question: Question | null = await readQuestionByGlobalIndex(env.STATE, qid);
+            if (!question) {
+              const legacy = await getJSON<Question[]>(env.STATE, 'questions', []);
+              if (qid >= 0 && qid < legacy.length) question = legacy[qid];
+            }
+            if (question) {
               const isCorrect = answer === question.answer;
               
               await incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata');
