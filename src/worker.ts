@@ -377,6 +377,76 @@ function formatQuestionPreview(q: Question, index: number): string {
   return `#${index + 1}\n\n${esc(q.question)}\n\nA) ${esc(q.options.A)}\nB) ${esc(q.options.B)}\nC) ${esc(q.options.C)}\nD) ${esc(q.options.D)}\n\nAnswer: ${q.answer}`;
 }
 
+async function showQuestionsPage(kv: KVNamespace, token: string, chatId: number, questions: Question[], page: number): Promise<void> {
+  const questionsPerPage = 10;
+  const startIndex = page * questionsPerPage;
+  const endIndex = Math.min(startIndex + questionsPerPage, questions.length);
+  const pageQuestions = questions.slice(startIndex, endIndex);
+  
+  let message = `📚 All Questions (Page ${page + 1}/${Math.ceil(questions.length / questionsPerPage)})\n\n`;
+  message += `Showing questions ${startIndex + 1}-${endIndex} of ${questions.length}\n\n`;
+  
+  for (let i = 0; i < pageQuestions.length; i++) {
+    const q = pageQuestions[i];
+    const questionIndex = startIndex + i;
+    message += `#${questionIndex + 1} ${truncate(q.question.replace(/\n/g, ' '), 60)} [Ans: ${q.answer}]\n\n`;
+  }
+  
+  // Create navigation buttons
+  const keyboard: any[] = [];
+  
+  // Add edit/delete buttons for each question (2 rows of 5 buttons each)
+  const editDeleteRow1: any[] = [];
+  const editDeleteRow2: any[] = [];
+  
+  for (let i = 0; i < Math.min(5, pageQuestions.length); i++) {
+    const questionIndex = startIndex + i;
+    editDeleteRow1.push({ text: `📝${questionIndex + 1}`, callback_data: `admin:edit:${questionIndex}` });
+  }
+  
+  for (let i = 5; i < pageQuestions.length; i++) {
+    const questionIndex = startIndex + i;
+    editDeleteRow2.push({ text: `📝${questionIndex + 1}`, callback_data: `admin:edit:${questionIndex}` });
+  }
+  
+  if (editDeleteRow1.length > 0) keyboard.push(editDeleteRow1);
+  if (editDeleteRow2.length > 0) keyboard.push(editDeleteRow2);
+  
+  // Add delete buttons row
+  const deleteRow1: any[] = [];
+  const deleteRow2: any[] = [];
+  
+  for (let i = 0; i < Math.min(5, pageQuestions.length); i++) {
+    const questionIndex = startIndex + i;
+    deleteRow1.push({ text: `🗑️${questionIndex + 1}`, callback_data: `admin:del:${questionIndex}` });
+  }
+  
+  for (let i = 5; i < pageQuestions.length; i++) {
+    const questionIndex = startIndex + i;
+    deleteRow2.push({ text: `🗑️${questionIndex + 1}`, callback_data: `admin:del:${questionIndex}` });
+  }
+  
+  if (deleteRow1.length > 0) keyboard.push(deleteRow1);
+  if (deleteRow2.length > 0) keyboard.push(deleteRow2);
+  
+  // Add navigation buttons
+  const navRow: any[] = [];
+  if (page > 0) {
+    navRow.push({ text: '⬅️ Prev', callback_data: 'admin:listAll:prev' });
+  }
+  if (endIndex < questions.length) {
+    navRow.push({ text: 'Next ➡️', callback_data: 'admin:listAll:next' });
+  }
+  if (navRow.length > 0) {
+    keyboard.push(navRow);
+  }
+  
+  // Add close button
+  keyboard.push([{ text: '✖️ Close', callback_data: 'admin:listAll:close' }]);
+  
+  await sendMessage(token, chatId, message, { reply_markup: { inline_keyboard: keyboard } });
+}
+
 function truncate(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text;
   return text.slice(0, Math.max(0, maxLen - 1)) + '…';
@@ -1565,36 +1635,50 @@ export default {
               }
               await env.STATE.delete('admin:pending:q');
             }
-          } else if (data.startsWith('admin:del:')) {
-            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
-            const parts = data.split(':');
-            const idx = parseInt(parts[2], 10);
-            const list = await getJSON<Question[]>(env.STATE, 'questions', []);
-            if (idx >= 0 && idx < list.length) {
-              list.splice(idx, 1);
-              await putJSON(env.STATE, 'questions', list);
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `🗑️ Deleted question #${idx + 1}. Remaining: ${list.length}`);
-            } else {
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Invalid index');
-            }
+
           } else if (data === 'admin:listAll') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
             if (questions.length === 0) {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions in database.');
             } else {
-              // Build a concise list with truncation to respect Telegram's message limits
-              const lines: string[] = [];
-              for (let i = 0; i < questions.length; i++) {
-                const q = questions[i];
-                const line = `#${i + 1} ${truncate(q.question.replace(/\n/g, ' '), 80)} [Ans: ${q.answer}]`;
-                lines.push(line);
+              // Start with first 10 questions
+              await env.STATE.put('admin:listAll:page', '0');
+              await showQuestionsPage(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId!, questions, 0);
+            }
+          } else if (data.startsWith('admin:listAll:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            if (questions.length === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions in database.');
+            } else {
+              const action = data.split(':')[1];
+              const currentPageStr = await env.STATE.get('admin:listAll:page') || '0';
+              let currentPage = parseInt(currentPageStr, 10);
+              
+              if (action === 'next') {
+                currentPage = Math.min(currentPage + 1, Math.floor((questions.length - 1) / 10));
+              } else if (action === 'prev') {
+                currentPage = Math.max(currentPage - 1, 0);
+              } else if (action === 'close') {
+                await env.STATE.delete('admin:listAll:page');
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Closed question list');
+                return new Response('OK');
               }
-              const chunks = chunkLines(lines, 3500);
-              for (const chunk of chunks) {
-                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `<pre>${esc(chunk)}</pre>`);
-              }
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `Total: ${questions.length} questions.`);
+              
+              await env.STATE.put('admin:listAll:page', String(currentPage));
+              await showQuestionsPage(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId!, questions, currentPage);
+            }
+          } else if (data.startsWith('admin:del:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const idx = parseInt(data.split(':')[1], 10);
+            const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+            if (idx >= 0 && idx < list.length) {
+              const deleted = list.splice(idx, 1)[0];
+              await putJSON(env.STATE, 'questions', list);
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `🗑️ Deleted question #${idx + 1}:\n\n${truncate(deleted.question, 100)}...\n\nRemaining: ${list.length} questions`);
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Invalid question index');
             }
           } else if (data.startsWith('admin:edit:')) {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
@@ -1605,10 +1689,15 @@ export default {
             if (idx >= 0 && idx < list.length) {
               const current = list[idx];
               const example = JSON.stringify(current, null, 2);
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `Send updated question as JSON for #${idx + 1} like:\n\n<pre>${esc(example)}</pre>`);
+              const kb = { inline_keyboard: [[{ text: '✖️ Cancel Edit', callback_data: 'admin:editCancel' }]] };
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `📝 Editing Question #${idx + 1}\n\nSend updated question as JSON:\n\n<pre>${esc(example)}</pre>`, { reply_markup: kb });
             } else {
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Invalid index');
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Invalid question index');
             }
+          } else if (data === 'admin:editCancel') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
+            await env.STATE.delete('admin:edit:idx');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❎ Edit cancelled');
           }
         }
         
