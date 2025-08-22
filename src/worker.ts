@@ -1147,6 +1147,16 @@ export default {
         return new Response('Bot initialized and first MCQ posted');
       } else if (url.pathname === '/health' && request.method === 'GET') {
         return new Response('ok');
+      } else if (url.pathname === '/sync-targets' && request.method === 'GET') {
+        // Reset all targets to start from question 0
+        await putJSON(env.STATE, `idx:${env.TARGET_GROUP_ID}`, 0);
+        if (env.TARGET_CHANNEL_ID) {
+          await putJSON(env.STATE, `idx:${env.TARGET_CHANNEL_ID}`, 0);
+        }
+        if (env.TARGET_DISCUSSION_GROUP_ID) {
+          await putJSON(env.STATE, `idx:${env.TARGET_DISCUSSION_GROUP_ID}`, 0);
+        }
+        return new Response('All targets reset to question index 0 - they will now post the same questions');
       }
       
       return new Response('Not Found', { status: 404 });
