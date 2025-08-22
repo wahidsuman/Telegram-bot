@@ -447,6 +447,71 @@ async function showQuestionsPage(kv: KVNamespace, token: string, chatId: number,
   await sendMessage(token, chatId, message, { reply_markup: { inline_keyboard: keyboard } });
 }
 
+async function handleDiscountButtonCreation(kv: KVNamespace, token: string, chatId: number, text: string, step: string): Promise<void> {
+  const keyboard = {
+    inline_keyboard: [[{ text: '✖️ Cancel', callback_data: 'admin:discountCancel' }]]
+  };
+  
+  if (step === 'name') {
+    await kv.put('admin:addDiscount:name', text);
+    await kv.put('admin:addDiscount:pending', 'code');
+    await sendMessage(token, chatId, `✅ Button name: **${text}**\n\nStep 2/4: Send the **discount code** (e.g., "M650", "P500")`, { reply_markup: keyboard, parse_mode: 'Markdown' });
+  } else if (step === 'code') {
+    await kv.put('admin:addDiscount:code', text);
+    await kv.put('admin:addDiscount:pending', 'message');
+    await sendMessage(token, chatId, `✅ Discount code: \`${text}\`\n\nStep 3/4: Send the **follow-up message** (what users see after clicking the button)`, { reply_markup: keyboard, parse_mode: 'Markdown' });
+  } else if (step === 'message') {
+    await kv.put('admin:addDiscount:message', text);
+    await kv.put('admin:addDiscount:pending', 'confirm');
+    
+    const name = await kv.get('admin:addDiscount:name') || '';
+    const code = await kv.get('admin:addDiscount:code') || '';
+    
+    const confirmKeyboard = {
+      inline_keyboard: [
+        [{ text: '✅ Confirm & Save', callback_data: 'admin:confirmDiscount' }],
+        [{ text: '✖️ Cancel', callback_data: 'admin:discountCancel' }]
+      ]
+    };
+    
+    await sendMessage(token, chatId, `📋 **New Discount Button Preview:**\n\n**Name:** ${name}\n**Code:** \`${code}\`\n**Message:** ${text}\n\n✅ Confirm to save this discount button?`, { reply_markup: confirmKeyboard, parse_mode: 'Markdown' });
+  }
+}
+
+async function handleDiscountButtonEditing(kv: KVNamespace, token: string, chatId: number, text: string, step: string): Promise<void> {
+  const keyboard = {
+    inline_keyboard: [[{ text: '✖️ Cancel', callback_data: 'admin:discountCancel' }]]
+  };
+  
+  if (step === 'name') {
+    await kv.put('admin:editDiscount:name', text);
+    await kv.put('admin:editDiscount:pending', 'code');
+    const currentCode = await kv.get('admin:editDiscount:code') || '';
+    await sendMessage(token, chatId, `✅ New button name: **${text}**\n\nStep 2/4: Send the **new discount code** (current: \`${currentCode}\`)`, { reply_markup: keyboard, parse_mode: 'Markdown' });
+  } else if (step === 'code') {
+    await kv.put('admin:editDiscount:code', text);
+    await kv.put('admin:editDiscount:pending', 'message');
+    const currentMessage = await kv.get('admin:editDiscount:message') || '';
+    await sendMessage(token, chatId, `✅ New discount code: \`${text}\`\n\nStep 3/4: Send the **new follow-up message** (current: ${currentMessage.substring(0, 50)}${currentMessage.length > 50 ? '...' : ''})`, { reply_markup: keyboard, parse_mode: 'Markdown' });
+  } else if (step === 'message') {
+    await kv.put('admin:editDiscount:message', text);
+    await kv.put('admin:editDiscount:pending', 'confirm');
+    
+    const name = await kv.get('admin:editDiscount:name') || '';
+    const code = await kv.get('admin:editDiscount:code') || '';
+    const targetId = await kv.get('admin:editDiscount:target') || '';
+    
+    const confirmKeyboard = {
+      inline_keyboard: [
+        [{ text: '✅ Confirm & Update', callback_data: `admin:confirmEditDiscount:${targetId}` }],
+        [{ text: '✖️ Cancel', callback_data: 'admin:discountCancel' }]
+      ]
+    };
+    
+    await sendMessage(token, chatId, `📋 **Updated Discount Button Preview:**\n\n**Name:** ${name}\n**Code:** \`${code}\`\n**Message:** ${text}\n\n✅ Confirm to update this discount button?`, { reply_markup: confirmKeyboard, parse_mode: 'Markdown' });
+  }
+}
+
 function truncate(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text;
   return text.slice(0, Math.max(0, maxLen - 1)) + '…';
@@ -957,7 +1022,21 @@ export default {
               } catch (error) {
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Edit failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
               }
-            } else if (message.text === '/start' || message.text === '/admin') {
+            } else {
+              // Check for discount button creation/editing flow
+              const addDiscountPending = await env.STATE.get('admin:addDiscount:pending');
+              const editDiscountPending = await env.STATE.get('admin:editDiscount:pending');
+              
+              if (addDiscountPending && message.text) {
+                await handleDiscountButtonCreation(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId, message.text, addDiscountPending);
+                return new Response('OK');
+              } else if (editDiscountPending && message.text) {
+                await handleDiscountButtonEditing(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId, message.text, editDiscountPending);
+                return new Response('OK');
+              }
+            }
+            
+            if (message.text === '/start' || message.text === '/admin') {
               const keyboard = {
                 inline_keyboard: [
                   [{ text: '📤 Upload Questions', callback_data: 'admin:upload' }],
@@ -968,7 +1047,8 @@ export default {
                   [{ text: '📣 Broadcast to Group', callback_data: 'admin:broadcast' }],
                   [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
-                  [{ text: '🧹 Smart Dedupe', callback_data: 'admin:smartdedupe' }]
+                  [{ text: '🧹 Smart Dedupe', callback_data: 'admin:smartdedupe' }],
+                  [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
               
@@ -1734,6 +1814,153 @@ export default {
                 `✅ Smart deduplication complete!\n\n🗑️ Removed ${removedCount} similar questions\n📊 Total questions now: ${unique.length}\n\n📝 Sample removed questions:\n${removedList}${removed.length > 5 ? '\n... and ' + (removed.length - 5) + ' more' : ''}`);
             } else {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ No similar questions found. Database is clean!');
+            }
+          } else if (data === 'admin:manageDiscounts') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const buttons = await getDiscountButtons(env.STATE);
+            
+            if (buttons.length === 0) {
+              const keyboard = {
+                inline_keyboard: [
+                  [{ text: '➕ Add New Button', callback_data: 'admin:addDiscount' }],
+                  [{ text: '✖️ Close', callback_data: 'admin:discountClose' }]
+                ]
+              };
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '🎯 No discount buttons configured.\n\nClick "Add New Button" to create your first discount provider.', { reply_markup: keyboard });
+            } else {
+              let message = '🎯 Current Discount Buttons:\n\n';
+              buttons.forEach((btn, index) => {
+                message += `${index + 1}. **${btn.name}** (${btn.id})\n`;
+                message += `   Code: \`${btn.message1}\`\n`;
+                message += `   Message: ${btn.message2.substring(0, 50)}${btn.message2.length > 50 ? '...' : ''}\n\n`;
+              });
+              
+              const keyboard = {
+                inline_keyboard: [
+                  [{ text: '➕ Add New Button', callback_data: 'admin:addDiscount' }],
+                  ...buttons.map((btn, index) => [
+                    { text: `📝 Edit ${btn.name}`, callback_data: `admin:editDiscount:${btn.id}` },
+                    { text: `🗑️ Delete ${btn.name}`, callback_data: `admin:deleteDiscount:${btn.id}` }
+                  ]),
+                  [{ text: '✖️ Close', callback_data: 'admin:discountClose' }]
+                ]
+              };
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, message, { reply_markup: keyboard, parse_mode: 'Markdown' });
+            }
+          } else if (data === 'admin:addDiscount') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            await env.STATE.put('admin:addDiscount:pending', 'name');
+            const keyboard = {
+              inline_keyboard: [[{ text: '✖️ Cancel', callback_data: 'admin:discountCancel' }]]
+            };
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '🎯 Adding New Discount Button\n\nStep 1/4: Send the **button name** (e.g., "Marrow", "Cerebellum")', { reply_markup: keyboard });
+          } else if (data === 'admin:discountCancel') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
+            await env.STATE.delete('admin:addDiscount:pending');
+            await env.STATE.delete('admin:addDiscount:name');
+            await env.STATE.delete('admin:addDiscount:code');
+            await env.STATE.delete('admin:addDiscount:message');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❎ Discount button creation cancelled');
+          } else if (data === 'admin:discountClose') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Closed');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Discount management closed');
+          } else if (data.startsWith('admin:editDiscount:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const buttonId = data.split(':')[1];
+            const buttons = await getDiscountButtons(env.STATE);
+            const button = buttons.find(b => b.id === buttonId);
+            
+            if (button) {
+              await env.STATE.put('admin:editDiscount:target', buttonId);
+              await env.STATE.put('admin:editDiscount:pending', 'name');
+              await env.STATE.put('admin:editDiscount:name', button.name);
+              await env.STATE.put('admin:editDiscount:code', button.message1);
+              await env.STATE.put('admin:editDiscount:message', button.message2);
+              
+              const keyboard = {
+                inline_keyboard: [[{ text: '✖️ Cancel', callback_data: 'admin:discountCancel' }]]
+              };
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `📝 Editing: **${button.name}**\n\nStep 1/4: Send the **new button name** (current: ${button.name})`, { reply_markup: keyboard, parse_mode: 'Markdown' });
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Button not found');
+            }
+          } else if (data.startsWith('admin:deleteDiscount:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const buttonId = data.split(':')[1];
+            const buttons = await getDiscountButtons(env.STATE);
+            const button = buttons.find(b => b.id === buttonId);
+            
+            if (button) {
+              const filteredButtons = buttons.filter(b => b.id !== buttonId);
+              await saveDiscountButtons(env.STATE, filteredButtons);
+              
+              const keyboard = {
+                inline_keyboard: [[{ text: '✅ Back to List', callback_data: 'admin:manageDiscounts' }]]
+              };
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `🗑️ Deleted discount button: **${button.name}**\n\nCode: \`${button.message1}\``, { reply_markup: keyboard, parse_mode: 'Markdown' });
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Button not found');
+            }
+          } else if (data === 'admin:confirmDiscount') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Saving...');
+            
+            const name = await env.STATE.get('admin:addDiscount:name') || '';
+            const code = await env.STATE.get('admin:addDiscount:code') || '';
+            const message = await env.STATE.get('admin:addDiscount:message') || '';
+            
+            if (name && code && message) {
+              const id = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+              const buttons = await getDiscountButtons(env.STATE);
+              const newButton: DiscountButton = { id, name, message1: code, message2: message };
+              buttons.push(newButton);
+              await saveDiscountButtons(env.STATE, buttons);
+              
+              // Clean up
+              await env.STATE.delete('admin:addDiscount:pending');
+              await env.STATE.delete('admin:addDiscount:name');
+              await env.STATE.delete('admin:addDiscount:code');
+              await env.STATE.delete('admin:addDiscount:message');
+              
+              const keyboard = {
+                inline_keyboard: [[{ text: '✅ Back to List', callback_data: 'admin:manageDiscounts' }]]
+              };
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `✅ **Discount button created successfully!**\n\n**Name:** ${name}\n**Code:** \`${code}\`\n**Message:** ${message}`, { reply_markup: keyboard, parse_mode: 'Markdown' });
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Error: Missing required information');
+            }
+          } else if (data.startsWith('admin:confirmEditDiscount:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Updating...');
+            
+            const targetId = data.split(':')[1];
+            const name = await env.STATE.get('admin:editDiscount:name') || '';
+            const code = await env.STATE.get('admin:editDiscount:code') || '';
+            const message = await env.STATE.get('admin:editDiscount:message') || '';
+            
+            if (name && code && message) {
+              const buttons = await getDiscountButtons(env.STATE);
+              const buttonIndex = buttons.findIndex(b => b.id === targetId);
+              
+              if (buttonIndex !== -1) {
+                buttons[buttonIndex] = { id: targetId, name, message1: code, message2: message };
+                await saveDiscountButtons(env.STATE, buttons);
+                
+                // Clean up
+                await env.STATE.delete('admin:editDiscount:pending');
+                await env.STATE.delete('admin:editDiscount:target');
+                await env.STATE.delete('admin:editDiscount:name');
+                await env.STATE.delete('admin:editDiscount:code');
+                await env.STATE.delete('admin:editDiscount:message');
+                
+                const keyboard = {
+                  inline_keyboard: [[{ text: '✅ Back to List', callback_data: 'admin:manageDiscounts' }]]
+                };
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `✅ **Discount button updated successfully!**\n\n**Name:** ${name}\n**Code:** \`${code}\`\n**Message:** ${message}`, { reply_markup: keyboard, parse_mode: 'Markdown' });
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Error: Button not found');
+              }
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Error: Missing required information');
             }
           }
         }
