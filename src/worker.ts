@@ -1021,43 +1021,58 @@ export default {
           const userId = query.from.id;
           const chatId = query.message?.chat.id;
           
-                     if (data === 'user:stats') {
+                                           if (data === 'user:stats') {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+              if (chatId && chatId < 0) {
+                const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
+                await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, `Open ${uname} to view your stats.`, true);
+              } else {
+                const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
+                const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
+                const daily = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
+                const monthly = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
+                const meD = daily.users[String(userId)] || { cnt: 0, correct: 0 };
+                const meM = monthly.users[String(userId)] || { cnt: 0, correct: 0 };
+                const msg = `📊 Your Stats\n\nToday (${today}): ${meD.cnt} attempted, ${meD.correct} correct\nThis Month (${month}): ${meM.cnt} attempted, ${meM.correct} correct`;
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, msg);
+              }
+                       } else if (data === 'user:rank:daily') {
              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
-             const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
-             const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
-             const daily = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
-             const monthly = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
-             const meD = daily.users[String(userId)] || { cnt: 0, correct: 0 };
-             const meM = monthly.users[String(userId)] || { cnt: 0, correct: 0 };
-             const msg = `📊 Your Stats\n\nToday (${today}): ${meD.cnt} attempted, ${meD.correct} correct\nThis Month (${month}): ${meM.cnt} attempted, ${meM.correct} correct`;
-             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, msg);
-           } else if (data === 'user:rank:daily') {
-            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
-            const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
-            const stats = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
-            const entries = Object.entries(stats.users).map(([uid, s]) => ({ uid, cnt: s.cnt, correct: s.correct }));
-            entries.sort((a, b) => b.cnt - a.cnt || b.correct - a.correct);
-            const userIndex = entries.findIndex(e => e.uid === String(userId));
-            const rank = userIndex >= 0 ? userIndex + 1 : '—';
-            const me = stats.users[String(userId)] || { cnt: 0, correct: 0 };
-            const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
-            const header = `🏆 Daily Rank (${today})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
-            const body = top.length ? top.join('\n') : 'No activity yet.';
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `${header}\n${body}`);
-          } else if (data === 'user:rank:monthly') {
-            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
-            const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
-            const stats = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
-            const entries = Object.entries(stats.users).map(([uid, s]) => ({ uid, cnt: s.cnt, correct: s.correct }));
-            entries.sort((a, b) => b.cnt - a.cnt || b.correct - a.correct);
-            const userIndex = entries.findIndex(e => e.uid === String(userId));
-            const rank = userIndex >= 0 ? userIndex + 1 : '—';
-            const me = stats.users[String(userId)] || { cnt: 0, correct: 0 };
-            const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
-            const header = `🏅 Monthly Rank (${month})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
-            const body = top.length ? top.join('\n') : 'No activity yet.';
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `${header}\n${body}`);
-          } else if (data.startsWith('ans:')) {
+             if (chatId && chatId < 0) {
+               const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
+               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, `Open ${uname} to view daily ranks.`, true);
+             } else {
+               const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
+               const stats = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
+               const entries = Object.entries(stats.users).map(([uid, s]) => ({ uid, cnt: s.cnt, correct: s.correct }));
+               entries.sort((a, b) => b.cnt - a.cnt || b.correct - a.correct);
+               const userIndex = entries.findIndex(e => e.uid === String(userId));
+               const rank = userIndex >= 0 ? userIndex + 1 : '—';
+               const me = stats.users[String(userId)] || { cnt: 0, correct: 0 };
+               const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
+               const header = `🏆 Daily Rank (${today})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
+               const body = top.length ? top.join('\n') : 'No activity yet.';
+               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `${header}\n${body}`);
+             }
+           } else if (data === 'user:rank:monthly') {
+             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+             if (chatId && chatId < 0) {
+               const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
+               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, `Open ${uname} to view monthly ranks.`, true);
+             } else {
+               const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
+               const stats = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
+               const entries = Object.entries(stats.users).map(([uid, s]) => ({ uid, cnt: s.cnt, correct: s.correct }));
+               entries.sort((a, b) => b.cnt - a.cnt || b.correct - a.correct);
+               const userIndex = entries.findIndex(e => e.uid === String(userId));
+               const rank = userIndex >= 0 ? userIndex + 1 : '—';
+               const me = stats.users[String(userId)] || { cnt: 0, correct: 0 };
+               const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
+               const header = `🏅 Monthly Rank (${month})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
+               const body = top.length ? top.join('\n') : 'No activity yet.';
+               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `${header}\n${body}`);
+             }
+           } else if (data.startsWith('ans:')) {
             // MCQ answer
             const [, qidStr, answer] = data.split(':');
             const qid = parseInt(qidStr);
