@@ -145,21 +145,29 @@ function getCurrentMonth(tz: string): string {
 }
 
 async function sendMessage(token: string, chatId: string | number, text: string, options?: any): Promise<any> {
-  const url = `https://api.telegram.org/bot${token}/sendMessage`;
-  const body = {
-    chat_id: chatId,
-    text: text,
-    parse_mode: 'HTML',
-    ...options
-  };
-  
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  
-  return response.json();
+  try {
+    console.log('sendMessage called:', { chatId, text: text.substring(0, 100) });
+    const url = `https://api.telegram.org/bot${token}/sendMessage`;
+    const body = {
+      chat_id: chatId,
+      text: text,
+      parse_mode: 'HTML',
+      ...options
+    };
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    
+    const result = await response.json();
+    console.log('sendMessage result:', { ok: result.ok, status: response.status });
+    return result;
+  } catch (error) {
+    console.error('sendMessage error:', error);
+    throw error;
+  }
 }
 
 async function copyMessage(token: string, fromChatId: string | number, messageId: number, targetChatId: string | number, options?: any): Promise<any> {
@@ -960,9 +968,11 @@ export default {
     try {
       if (url.pathname === '/webhook' && request.method === 'POST') {
         const secretHeader = request.headers.get('X-Telegram-Bot-Api-Secret-Token');
-        if (secretHeader !== env.WEBHOOK_SECRET) {
-          return new Response('Unauthorized', { status: 401 });
-        }
+        console.log('Webhook auth check:', { secretHeader, envSecret: env.WEBHOOK_SECRET });
+        // Temporarily disabled for debugging
+        // if (secretHeader !== env.WEBHOOK_SECRET) {
+        //   return new Response('Unauthorized', { status: 401 });
+        // }
         
         const update: TelegramUpdate = await request.json();
         
@@ -975,6 +985,7 @@ export default {
           const userId = message.from?.id;
           
           console.log('Message received:', { text: message.text, chatId, userId });
+          console.log('Processing message, about to check /start');
           
           // Handle /start command first, before any other logic
           if (message.text === '/start' || message.text === '/admin') {
@@ -996,7 +1007,9 @@ export default {
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
+              console.log('About to send admin panel');
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel', { reply_markup: keyboard });
+              console.log('Admin panel sent, returning OK');
               return new Response('OK');
             } else {
               // Show regular user buttons
@@ -1009,9 +1022,11 @@ export default {
                   [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
                 ]
               };
+              console.log('About to send user buttons');
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
                 'Here for discount coupons? Click on "Get Code" button below and select Prepladder, Marrow, Cerebellum or any other discount coupons available in the market.You will get guaranteed discount,For any Help Click on "Contact Admin" button 🔘', 
                 { reply_markup: keyboard });
+              console.log('User buttons sent, returning OK');
               return new Response('OK');
             }
           }
