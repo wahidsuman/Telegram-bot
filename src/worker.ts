@@ -1084,12 +1084,38 @@ export default {
               // Handle file upload - ensure we respond to admin
               try {
                 console.log('Processing file upload from admin:', chatId);
-                const result = await uploadQuestionsFromFile(env.STATE, env.TELEGRAM_BOT_TOKEN, message.document.file_id, env.TARGET_GROUP_ID);
                 
-                const responseMessage = `✅ Upload Summary\n\n• Uploaded this time: ${result.uploaded}\n• Skipped duplicates (this time): ${result.skippedThisTime}\n• Skipped duplicates (total): ${result.skippedTotal}\n• Remaining to post: ${result.unsent}\n• Posted till now: ${result.sent}\n• Total in database: ${result.total}`;
-                
-                console.log('Sending response to admin:', responseMessage);
-                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, responseMessage);
+                // Check if it's a PDF
+                if (message.document.file_name?.toLowerCase().endsWith('.pdf')) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                    '📄 PDF detected!\n\nI cannot directly process PDFs, but here\'s how to extract questions:\n\n' +
+                    '1️⃣ **Use online PDF to text converter**\n' +
+                    '2️⃣ **Copy the extracted text**\n' +
+                    '3️⃣ **Format questions** like this:\n\n' +
+                    'Question=Your question here\n' +
+                    'A=Option A\n' +
+                    'B=Option B\n' +
+                    'C=Option C\n' +
+                    'D=Option D\n' +
+                    'Answer=A\n' +
+                    'Explanation=Your explanation\n\n' +
+                    '4️⃣ **Send the formatted text** to me\n' +
+                    '5️⃣ **I\'ll process and remove duplicates** automatically!');
+                  
+                  // Also notify admin about PDF upload
+                  if (chatId.toString() !== env.ADMIN_CHAT_ID) {
+                    await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, 
+                      `📄 PDF uploaded by user ${message.from?.first_name || 'Unknown'} in chat ${chatId}\n\nFile: ${message.document.file_name || 'Unknown'}`);
+                  }
+                } else {
+                  // Process other file types (JSON, CSV, etc.)
+                  const result = await uploadQuestionsFromFile(env.STATE, env.TELEGRAM_BOT_TOKEN, message.document.file_id, env.TARGET_GROUP_ID);
+                  
+                  const responseMessage = `✅ Upload Summary\n\n• Uploaded this time: ${result.uploaded}\n• Skipped duplicates (this time): ${result.skippedThisTime}\n• Skipped duplicates (total): ${result.skippedTotal}\n• Remaining to post: ${result.unsent}\n• Posted till now: ${result.sent}\n• Total in database: ${result.total}`;
+                  
+                  console.log('Sending response to admin:', responseMessage);
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, responseMessage);
+                }
                 
               } catch (error) {
                 console.error('File upload error:', error);
