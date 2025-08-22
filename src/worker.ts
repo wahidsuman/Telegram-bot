@@ -656,6 +656,99 @@ async function formatMonthlyReport(kv: KVNamespace, yyyyMM: string): Promise<str
   return report;
 }
 
+const SHARD_SIZE = 1000;
+
+async function getShardCount(kv: KVNamespace): Promise<number> {
+  return await getJSON<number>(kv, 'q:shards', 0);
+}
+
+async function getTotalCount(kv: KVNamespace): Promise<number> {
+  return await getJSON<number>(kv, 'q:count', 0);
+}
+
+async function setShardCount(kv: KVNamespace, n: number): Promise<void> {
+  await putJSON(kv, 'q:shards', n);
+}
+
+async function setTotalCount(kv: KVNamespace, n: number): Promise<void> {
+  await putJSON(kv, 'q:count', n);
+}
+
+async function readShard(kv: KVNamespace, shardIndex: number): Promise<Question[]> {
+  return await getJSON<Question[]>(kv, `q:${shardIndex}`, []);
+}
+
+async function writeShard(kv: KVNamespace, shardIndex: number, items: Question[]): Promise<void> {
+  await putJSON(kv, `q:${shardIndex}`, items);
+}
+
+function computeShardLocation(globalIndex: number): { shard: number; offset: number } {
+  const shard = Math.floor(globalIndex / SHARD_SIZE);
+  const offset = globalIndex % SHARD_SIZE;
+  return { shard, offset };
+}
+
+async function readQuestionByGlobalIndex(kv: KVNamespace, globalIndex: number): Promise<Question | null> {
+  const total = await getTotalCount(kv);
+  if (total === 0) return null;
+  const normIndex = ((globalIndex % total) + total) % total;
+  const { shard, offset } = computeShardLocation(normIndex);
+  const items = await readShard(kv, shard);
+  if (offset < 0 || offset >= items.length) return null;
+  return items[offset] || null;
+}
+
+async function appendQuestionsSharded(kv: KVNamespace, items: Question[]): Promise<void> {
+  if (items.length === 0) return;
+  let total = await getTotalCount(kv);
+  let shards = await getShardCount(kv);
+  let currentShardIndex = shards === 0 ? 0 : shards - 1;
+  let currentShard = await readShard(kv, currentShardIndex);
+  if (currentShard.length >= SHARD_SIZE) {
+    // start a new shard
+    currentShardIndex = shards;
+    currentShard = [];
+    shards += 1;
+  }
+  for (const q of items) {
+    if (currentShard.length >= SHARD_SIZE) {
+      await writeShard(kv, currentShardIndex, currentShard);
+      currentShardIndex += 1;
+      currentShard = [];
+      shards = Math.max(shards, currentShardIndex + 1);
+    }
+    currentShard.push(q);
+    total += 1;
+  }
+  await writeShard(kv, currentShardIndex, currentShard);
+  await setShardCount(kv, Math.max(shards, currentShardIndex + 1));
+  await setTotalCount(kv, total);
+}
+
+async function ensureShardedInitialized(kv: KVNamespace): Promise<void> {
+  const shards = await getShardCount(kv);
+  const total = await getTotalCount(kv);
+  if (shards === 0 && total === 0) {
+    // If legacy 'questions' exists, do a lazy migration of counts only
+    const legacy = await getJSON<Question[]>(kv, 'questions', []);
+    if (legacy.length > 0) {
+      // Write legacy into shards in batches
+      const batches: Question[][] = [];
+      for (let i = 0; i < legacy.length; i += SHARD_SIZE) {
+        batches.push(legacy.slice(i, i + SHARD_SIZE));
+      }
+      for (let si = 0; si < batches.length; si++) {
+        await writeShard(kv, si, batches[si]);
+      }
+      await setShardCount(kv, batches.length);
+      await setTotalCount(kv, legacy.length);
+    } else {
+      await setShardCount(kv, 0);
+      await setTotalCount(kv, 0);
+    }
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
