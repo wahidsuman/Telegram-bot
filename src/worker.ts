@@ -1057,7 +1057,7 @@ export default {
                 const username = message.from?.username ? `@${message.from.username}` : '—';
                 
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
-                  '✅ Thank you! Your WhatsApp number has been saved. Admin will contact you soon for bargaining. 🕐');
+                  '✅ Thank you! Your WhatsApp number has been saved successfully.\n\n🛑 Stay still! Admin will reply you soon for bargaining.\n\n⏰ Please wait patiently while we process your request. 🕐');
                 
                 // Notify admin
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, 
