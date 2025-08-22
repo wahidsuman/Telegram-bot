@@ -2053,8 +2053,8 @@ export default {
     try {
       await ensureKeys(env.STATE);
       await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
-      // Send 5 questions per schedule tick
-      for (let i = 0; i < 5; i++) {
+      // Send 2 questions per schedule tick
+      for (let i = 0; i < 2; i++) {
         await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
       }
     } catch (error) {
