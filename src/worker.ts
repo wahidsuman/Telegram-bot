@@ -991,7 +991,8 @@ export default {
                   [{ text: 'Get Code', callback_data: 'coupon:copy' }],
                   [{ text: 'Bargain', callback_data: 'coupon:bargain' }],
                   [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
-                  [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }]
+                  [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
+                  [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
                 ]
               };
                 
@@ -1020,7 +1021,17 @@ export default {
           const userId = query.from.id;
           const chatId = query.message?.chat.id;
           
-          if (data === 'user:rank:daily') {
+                     if (data === 'user:stats') {
+             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+             const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
+             const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
+             const daily = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
+             const monthly = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
+             const meD = daily.users[String(userId)] || { cnt: 0, correct: 0 };
+             const meM = monthly.users[String(userId)] || { cnt: 0, correct: 0 };
+             const msg = `📊 Your Stats\n\nToday (${today}): ${meD.cnt} attempted, ${meD.correct} correct\nThis Month (${month}): ${meM.cnt} attempted, ${meM.correct} correct`;
+             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, msg);
+           } else if (data === 'user:rank:daily') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
             const stats = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
