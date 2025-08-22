@@ -1,0 +1,21 @@
+{
+  "name": "telegram-mcq-bot",
+  "version": "1.0.0",
+  "description": "A Telegram bot built on Cloudflare Workers that posts hourly MCQs, handles coupon distribution, and provides admin analytics using KV storage.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "fmt": "wrangler fmt",
+    "types:check": "tsc --noEmit",
+    "test": "echo \"No tests defined\" && exit 0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@cloudflare/workers-types": "^4.20250820.0",
+    "typescript": "^5.9.2",
+    "wrangler": "^4.31.0"
+  }
+}
