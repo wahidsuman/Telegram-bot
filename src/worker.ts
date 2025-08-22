@@ -974,6 +974,8 @@ export default {
           const chatId = message.chat.id;
           const userId = message.from?.id;
           
+          console.log('Message received:', { text: message.text, chatId, userId });
+          
           // Handle /start command first, before any other logic
           if (message.text === '/start' || message.text === '/admin') {
             const isAdmin = chatId.toString() === env.ADMIN_CHAT_ID || (env.ADMIN_USERNAME && message.from?.username && (`@${message.from.username}`.toLowerCase() === `@${env.ADMIN_USERNAME}`.toLowerCase()));
