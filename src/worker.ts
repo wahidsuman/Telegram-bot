@@ -974,6 +974,47 @@ export default {
           const chatId = message.chat.id;
           const userId = message.from?.id;
           
+          // Handle /start command first, before any other logic
+          if (message.text === '/start' || message.text === '/admin') {
+            const isAdmin = chatId.toString() === env.ADMIN_CHAT_ID || (env.ADMIN_USERNAME && message.from?.username && (`@${message.from.username}`.toLowerCase() === `@${env.ADMIN_USERNAME}`.toLowerCase()));
+            console.log('Start command received:', { chatId, adminChatId: env.ADMIN_CHAT_ID, isAdmin, text: message.text });
+            
+            if (isAdmin) {
+              // Show admin panel
+              const keyboard = {
+                inline_keyboard: [
+                  [{ text: '📤 Upload Questions', callback_data: 'admin:upload' }],
+                  [{ text: '📊 Daily Report', callback_data: 'admin:daily' }],
+                  [{ text: '📈 Monthly Report', callback_data: 'admin:monthly' }],
+                  [{ text: '⏭️ Post Next Now', callback_data: 'admin:postNow' }],
+                  [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
+                  [{ text: '📣 Broadcast to Group', callback_data: 'admin:broadcast' }],
+                  [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
+                  [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
+                  [{ text: '🧹 Smart Dedupe', callback_data: 'admin:smartdedupe' }],
+                  [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
+                ]
+              };
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel', { reply_markup: keyboard });
+              return new Response('OK');
+            } else {
+              // Show regular user buttons
+              const keyboard = {
+                inline_keyboard: [
+                  [{ text: '🎟️ Get Code', callback_data: 'coupon:copy' }],
+                  [{ text: '📞 Contact Admin', callback_data: 'coupon:bargain' }],
+                  [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
+                  [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
+                  [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
+                ]
+              };
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                'Here for discount coupons? Click on "Get Code" button below and select Prepladder, Marrow, Cerebellum or any other discount coupons available in the market.You will get guaranteed discount,For any Help Click on "Contact Admin" button 🔘', 
+                { reply_markup: keyboard });
+              return new Response('OK');
+            }
+          }
+
           const isAdmin = chatId.toString() === env.ADMIN_CHAT_ID || (env.ADMIN_USERNAME && message.from?.username && (`@${message.from.username}`.toLowerCase() === `@${env.ADMIN_USERNAME}`.toLowerCase()));
           console.log('Admin check:', { chatId, adminChatId: env.ADMIN_CHAT_ID, username: message.from?.username, adminUsername: env.ADMIN_USERNAME, isAdmin });
           if (isAdmin) {
