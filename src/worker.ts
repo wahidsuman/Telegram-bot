@@ -1773,8 +1773,8 @@ export default {
                 { text: '⬅️ Prev', callback_data: 'admin:mg:prev' },
                 { text: '➡️ Next', callback_data: 'admin:mg:next' }
               ], [
-                { text: '📝 Edit', callback_data: 'admin:edit:0' },
-                { text: '🗑️ Delete', callback_data: 'admin:del:0' }
+                { text: '📝 Edit', callback_data: `admin:edit:${currentIndex + 0}` },
+                { text: '🗑️ Delete', callback_data: `admin:del:${currentIndex + 0}` }
               ], [
                 { text: '✖️ Close', callback_data: 'admin:mg:close' }
               ]] };
@@ -1872,7 +1872,7 @@ export default {
             }
           } else if (data.startsWith('admin:del:')) {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
-            const idx = parseInt(data.split(':')[1], 10);
+            const idx = parseInt(data.split(':')[2], 10);
             const list = await getJSON<Question[]>(env.STATE, 'questions', []);
             if (idx >= 0 && idx < list.length) {
               const deleted = list.splice(idx, 1)[0];
