@@ -1056,6 +1056,7 @@ export default {
                   [{ text: '🗑️ Delete URL/DOC Questions', callback_data: 'admin:deleteUrlDoc' }],
                   [{ text: '🔧 Fix Data Integrity', callback_data: 'admin:fixData' }],
                   [{ text: '🔄 Restore from Backup', callback_data: 'admin:restoreBackup' }],
+                  [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1197,6 +1198,7 @@ export default {
                   [{ text: '🗑️ Delete URL/DOC Questions', callback_data: 'admin:deleteUrlDoc' }],
                   [{ text: '🔧 Fix Data Integrity', callback_data: 'admin:fixData' }],
                   [{ text: '🔄 Restore from Backup', callback_data: 'admin:restoreBackup' }],
+                  [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1861,7 +1863,7 @@ export default {
               `🗑️ All questions containing URLs or DOC references have been permanently removed.`
             );
           } else if (data === 'admin:fixData') {
-            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Creating backup and checking data integrity...');
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Creating backup and analyzing data corruption...');
             
             const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
             const totalQuestions = questions.length;
@@ -1877,9 +1879,23 @@ export default {
             let fixedCount = 0;
             let errorCount = 0;
             let corruptedCount = 0;
+            let mismatchCount = 0;
             const fixedQuestions: Question[] = [];
             const corruptedQuestions: string[] = [];
+            const mismatchDetails: string[] = [];
             
+            // First pass: collect all valid questions, answers, and explanations
+            const validQuestions: string[] = [];
+            const validAnswers: string[] = [];
+            const validExplanations: string[] = [];
+            
+            for (const q of questions) {
+              if (q.question && q.question.trim()) validQuestions.push(q.question.trim());
+              if (q.answer && ['A', 'B', 'C', 'D'].includes(q.answer)) validAnswers.push(q.answer);
+              if (q.explanation && q.explanation.trim()) validExplanations.push(q.explanation.trim());
+            }
+            
+            // Second pass: fix mismatched data
             for (let i = 0; i < questions.length; i++) {
               const q = questions[i];
               
@@ -1904,11 +1920,26 @@ export default {
                 continue;
               }
               
-              // Check for potential mismatches (answer doesn't match any option)
+              // Check for answer-option mismatches
               const answerText = q.options[q.answer as keyof typeof q.options];
               if (!answerText || answerText.trim() === '') {
                 corruptedCount++;
                 corruptedQuestions.push(`Q${i + 1}: Answer "${q.answer}" has empty text`);
+              }
+              
+              // Check for logical inconsistencies (answer text doesn't make sense with question)
+              const questionWords = q.question.toLowerCase().split(' ');
+              const answerWords = answerText.toLowerCase().split(' ');
+              const explanationWords = q.explanation.toLowerCase().split(' ');
+              
+              // Check if answer text appears in explanation (should be related)
+              const answerInExplanation = explanationWords.some(word => 
+                answerWords.some(aWord => aWord.length > 3 && aWord === word)
+              );
+              
+              if (!answerInExplanation && answerText.length > 10) {
+                mismatchCount++;
+                mismatchDetails.push(`Q${i + 1}: Answer "${answerText.substring(0, 30)}..." may not match explanation`);
               }
               
               // Clean and fix the question
@@ -1932,22 +1963,24 @@ export default {
             await putJSON(env.STATE, 'questions', fixedQuestions);
             
             // Create detailed report
-            const report = `🔧 **DATA INTEGRITY FIX REPORT**\n\n` +
+            const report = `🔧 **ADVANCED DATA INTEGRITY FIX REPORT**\n\n` +
               `📊 **Statistics:**\n` +
               `• Total questions checked: ${totalQuestions}\n` +
               `• Questions fixed: ${fixedCount}\n` +
               `• Questions removed: ${errorCount}\n` +
-              `• Questions with potential issues: ${corruptedCount}\n` +
+              `• Questions with answer issues: ${corruptedCount}\n` +
+              `• Questions with potential mismatches: ${mismatchCount}\n` +
               `• Questions remaining: ${fixedQuestions.length}\n\n` +
               `💾 **Backup created:** questions_backup_before_fix\n\n` +
-              `🔍 **Issues found:**\n${corruptedQuestions.slice(0, 10).join('\n')}${corruptedQuestions.length > 10 ? `\n... and ${corruptedQuestions.length - 10} more issues` : ''}\n\n` +
+              `🔍 **Critical Issues Found:**\n${corruptedQuestions.slice(0, 5).join('\n')}${corruptedQuestions.length > 5 ? `\n... and ${corruptedQuestions.length - 5} more` : ''}\n\n` +
+              `⚠️ **Potential Mismatches:**\n${mismatchDetails.slice(0, 5).join('\n')}${mismatchDetails.length > 5 ? `\n... and ${mismatchDetails.length - 5} more` : ''}\n\n` +
               `✅ **Database cleaned and validated!**\n\n` +
               `📋 **All remaining questions now have:**\n` +
               `• ✅ Valid question text\n` +
               `• ✅ Complete options (A, B, C, D)\n` +
               `• ✅ Valid answer (A, B, C, or D)\n` +
               `• ✅ Proper explanation\n\n` +
-              `🔄 **Test a few questions to verify the fix worked!**`;
+              `🔄 **Test questions manually to verify answers are correct!**`;
             
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, report);
             
@@ -1965,7 +1998,7 @@ export default {
               ).join('\n\n');
               
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
-                `📋 **Sample Fixed Questions (for verification):**\n\n${sampleQuestions}`
+                `📋 **Sample Fixed Questions (VERIFY THESE MANUALLY):**\n\n${sampleQuestions}`
               );
             }
           } else if (data === 'admin:reshuffleDisabled') {
@@ -2007,6 +2040,41 @@ export default {
               `• questions_backup_before_restore (current)\n\n` +
               `⚠️ **Note:** This restored the original corrupted data.\n` +
               `🔧 Run "Fix Data Integrity" again to clean it properly.`
+            );
+          } else if (data === 'admin:checkQuestion') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const totalQuestions = questions.length;
+            
+            if (totalQuestions === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ No questions in database to check.');
+              return new Response('OK');
+            }
+            
+            // Show first 5 questions for manual verification
+            const sampleQuestions = questions.slice(0, 5).map((q, i) => 
+              `**Question ${i + 1}:**\n` +
+              `📝 **Q:** ${q.question}\n\n` +
+              `A) ${q.options.A}\n` +
+              `B) ${q.options.B}\n` +
+              `C) ${q.options.C}\n` +
+              `D) ${q.options.D}\n\n` +
+              `✅ **Answer:** ${q.answer}\n` +
+              `📖 **Explanation:** ${q.explanation}\n\n` +
+              `🔍 **Verification:** Does answer "${q.answer}" match the explanation?\n` +
+              `---`
+            ).join('\n\n');
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+              `🔍 **MANUAL VERIFICATION - First 5 Questions**\n\n` +
+              `📊 Total questions in database: ${totalQuestions}\n\n` +
+              `${sampleQuestions}\n\n` +
+              `⚠️ **Check if:**\n` +
+              `• Answer matches the explanation\n` +
+              `• Answer text makes sense with the question\n` +
+              `• Explanation refers to the correct answer\n\n` +
+              `🔄 If these look wrong, run "Fix Data Integrity" again.`
             );
 
           } else if (data === 'admin:manage') {
