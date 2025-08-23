@@ -1058,6 +1058,7 @@ export default {
                   [{ text: '🔄 Restore from Backup', callback_data: 'admin:restoreBackup' }],
                   [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
                   [{ text: '🚨 Fix Questions 65+', callback_data: 'admin:fixFrom65' }],
+                  [{ text: '🗑️ DELETE ALL DATA', callback_data: 'admin:deleteAllData' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1201,6 +1202,7 @@ export default {
                   [{ text: '🔄 Restore from Backup', callback_data: 'admin:restoreBackup' }],
                   [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
                   [{ text: '🚨 Fix Questions 65+', callback_data: 'admin:fixFrom65' }],
+                  [{ text: '🗑️ DELETE ALL DATA', callback_data: 'admin:deleteAllData' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -2141,6 +2143,53 @@ export default {
               `✅ **PRESERVED (Questions 61-65):**\n${preservedSample}\n\n` +
               `❌ **REMOVED (Questions 66-70):**\n${removedSample}${corruptedQuestions.length > 5 ? `\n... and ${corruptedQuestions.length - 5} more corrupted questions` : ''}\n\n` +
               `🎯 **The bot will now post only correct questions!**`
+            );
+          } else if (data === 'admin:deleteAllData') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '⚠️ Deleting all data...');
+            
+            // Create final backup before deletion
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const totalQuestions = questions.length;
+            
+            // Create backup with timestamp
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            await putJSON(env.STATE, `questions_backup_final_${timestamp}`, questions);
+            
+            // Delete all question-related data
+            await env.STATE.delete('questions');
+            
+            // Reset all posting indexes
+            await env.STATE.delete(`idx:${env.TARGET_GROUP_ID}`);
+            await env.STATE.delete(`idx:${env.TARGET_CHANNEL_ID}`);
+            await env.STATE.delete(`idx:${env.TARGET_DISCUSSION_GROUP_ID}`);
+            
+            // Clear all user statistics
+            const keys = await env.STATE.list();
+            for (const key of keys.keys) {
+              if (key.name.startsWith('stats:') || 
+                  key.name.startsWith('daily:') || 
+                  key.name.startsWith('monthly:') ||
+                  key.name.startsWith('seen:') ||
+                  key.name.startsWith('admin:')) {
+                await env.STATE.delete(key.name);
+              }
+            }
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+              `🗑️ **ALL DATA DELETED SUCCESSFULLY!**\n\n` +
+              `📊 **What was deleted:**\n` +
+              `• ${totalQuestions} questions\n` +
+              `• All user statistics\n` +
+              `• All posting indexes\n` +
+              `• All admin states\n` +
+              `• All daily/monthly reports\n\n` +
+              `💾 **Final backup created:** questions_backup_final_${timestamp}\n\n` +
+              `🔄 **Bot is now reset to fresh state:**\n` +
+              `• ✅ Ready for new question uploads\n` +
+              `• ✅ Posting index reset to 0\n` +
+              `• ✅ All statistics cleared\n` +
+              `• ✅ Clean slate for fresh start\n\n` +
+              `📤 **Next step:** Upload your fresh questions!`
             );
 
           } else if (data === 'admin:manage') {
