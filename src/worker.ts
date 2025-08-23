@@ -1464,15 +1464,17 @@ export default {
                    const monthly = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
                    const meD = daily.users[String(userId)] || { cnt: 0, correct: 0 };
                    const meM = monthly.users[String(userId)] || { cnt: 0, correct: 0 };
-                   const msg = `📊 Your Stats\n\nToday (${today}): ${meD.cnt} attempted, ${meD.correct} correct\nThis Month (${month}): ${meM.cnt} attempted, ${meM.correct} correct`;
+                   const statsMsg = `📊 Your Stats\n\nToday (${today}): ${meD.cnt} attempted, ${meD.correct} correct\nThis Month (${month}): ${meM.cnt} attempted, ${meM.correct} correct`;
+                   const welcomeMsg = 'Here for discount coupons? Click on "Get Code" button below and select Prepladder, Marrow, Cerebellum or any other discount coupons available in the market.You will get guaranteed discount,For any Help Click on "Contact Admin" button 🔘';
+                   const fullMsg = `${statsMsg}\n\n${welcomeMsg}`;
                    const kb = { inline_keyboard: [
-                     [{ text: 'Get Code', callback_data: 'coupon:copy' }],
-                     [{ text: 'Contact Admin', callback_data: 'coupon:bargain' }],
+                     [{ text: '🎟️ Get Code', callback_data: 'coupon:copy' }],
+                     [{ text: '📞 Contact Admin', callback_data: 'coupon:bargain' }],
                      [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
                      [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
                      [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
                    ] };
-                   await sendMessage(env.TELEGRAM_BOT_TOKEN, userId, msg, { reply_markup: kb });
+                   await sendMessage(env.TELEGRAM_BOT_TOKEN, userId, fullMsg, { reply_markup: kb });
                    await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '📩 Sent to your DM', true);
                  } catch (e) {
                    const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
@@ -1502,14 +1504,16 @@ export default {
                  const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
                  const header = `🏆 Daily Rank (${today})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
                  const body = top.length ? top.join('\n') : 'No activity yet.';
+                 const welcomeMsg = 'Here for discount coupons? Click on "Get Code" button below and select Prepladder, Marrow, Cerebellum or any other discount coupons available in the market.You will get guaranteed discount,For any Help Click on "Contact Admin" button 🔘';
+                 const fullMsg = `${header}\n${body}\n\n${welcomeMsg}`;
                 const kb = { inline_keyboard: [
-                  [{ text: 'Get Code', callback_data: 'coupon:copy' }],
-                  [{ text: 'Contact Admin', callback_data: 'coupon:bargain' }],
+                  [{ text: '🎟️ Get Code', callback_data: 'coupon:copy' }],
+                  [{ text: '📞 Contact Admin', callback_data: 'coupon:bargain' }],
                   [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
                   [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
                   [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
                 ] };
-                 await sendMessage(env.TELEGRAM_BOT_TOKEN, userId, `${header}\n${body}`, { reply_markup: kb });
+                 await sendMessage(env.TELEGRAM_BOT_TOKEN, userId, fullMsg, { reply_markup: kb });
                  await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '📩 Sent to your DM', true);
                } catch (e) {
                  const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
@@ -1549,14 +1553,16 @@ export default {
                  const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
                  const header = `🏅 Monthly Rank (${month})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
                  const body = top.length ? top.join('\n') : 'No activity yet.';
+                 const welcomeMsg = 'Here for discount coupons? Click on "Get Code" button below and select Prepladder, Marrow, Cerebellum or any other discount coupons available in the market.You will get guaranteed discount,For any Help Click on "Contact Admin" button 🔘';
+                 const fullMsg = `${header}\n${body}\n\n${welcomeMsg}`;
                 const kb = { inline_keyboard: [
-                  [{ text: 'Get Code', callback_data: 'coupon:copy' }],
-                  [{ text: 'Contact Admin', callback_data: 'coupon:bargain' }],
+                  [{ text: '🎟️ Get Code', callback_data: 'coupon:copy' }],
+                  [{ text: '📞 Contact Admin', callback_data: 'coupon:bargain' }],
                   [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
                   [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
                   [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
                 ] };
-                 await sendMessage(env.TELEGRAM_BOT_TOKEN, userId, `${header}\n${body}`, { reply_markup: kb });
+                 await sendMessage(env.TELEGRAM_BOT_TOKEN, userId, fullMsg, { reply_markup: kb });
                  await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '📩 Sent to your DM', true);
                } catch (e) {
                  const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
