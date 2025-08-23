@@ -1007,6 +1007,7 @@ export default {
                   [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
                   [{ text: '🔄 Reshuffle Upcoming', callback_data: 'admin:reshuffle' }],
+                  [{ text: '🗑️ Delete Last 1K', callback_data: 'admin:deleteLast1K' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1145,6 +1146,7 @@ export default {
                   [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
                   [{ text: '🔄 Reshuffle Upcoming', callback_data: 'admin:reshuffle' }],
+                  [{ text: '🗑️ Delete Last 1K', callback_data: 'admin:deleteLast1K' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1756,6 +1758,35 @@ export default {
               `• Upcoming questions: ${upcomingQuestions.length} (reshuffled)\n` +
               `• Total questions: ${newQuestions.length}\n\n` +
               `🔄 The order of upcoming questions has been randomized.`
+            );
+          } else if (data === 'admin:deleteLast1K') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Deleting last 1K questions...');
+            
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const totalQuestions = questions.length;
+            
+            if (totalQuestions === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ No questions in database to delete.');
+              return new Response('OK');
+            }
+            
+            // Calculate how many questions to delete (minimum of 1000 or all questions)
+            const questionsToDelete = Math.min(1000, totalQuestions);
+            const questionsToKeep = totalQuestions - questionsToDelete;
+            
+            // Remove the last N questions
+            const newQuestions = questions.slice(0, questionsToKeep);
+            
+            // Save the updated questions list
+            await putJSON(env.STATE, 'questions', newQuestions);
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+              `✅ Successfully deleted last ${questionsToDelete} questions!\n\n` +
+              `📊 Statistics:\n` +
+              `• Questions before: ${totalQuestions}\n` +
+              `• Questions deleted: ${questionsToDelete}\n` +
+              `• Questions remaining: ${questionsToKeep}\n\n` +
+              `🗑️ The last ${questionsToDelete} questions have been permanently removed from the database.`
             );
           } else if (data === 'admin:manage') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
