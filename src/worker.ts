@@ -1153,7 +1153,11 @@ export default {
             } else if (editIdxStr) {
               try {
                 if (!message.text) {
-                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ Please send the updated question as JSON text.');
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ Please send the updated question as JSON text or /cancel to exit edit mode.');
+                } else if (message.text.trim() === '/cancel') {
+                  // Cancel edit mode
+                  await env.STATE.delete('admin:edit:idx');
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ Edit mode cancelled. You can now upload questions normally.');
                 } else {
                   const idx = parseInt(editIdxStr, 10);
                   const q = JSON.parse(message.text);
@@ -1171,7 +1175,15 @@ export default {
                   await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Question #${idx + 1} updated.`);
                 }
               } catch (error) {
-                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Edit failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                if (error instanceof Error && error.message.includes('Unexpected token')) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                    `❌ Edit failed: Invalid JSON format.\n\n` +
+                    `Send /cancel to exit edit mode and upload questions normally.\n\n` +
+                    `Or send valid JSON like:\n` +
+                    `{"question":"Your question","options":{"A":"Option A","B":"Option B","C":"Option C","D":"Option D"},"answer":"A","explanation":"Your explanation"}`);
+                } else {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Edit failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                }
               }
             } else {
               // Check for discount button creation/editing flow
