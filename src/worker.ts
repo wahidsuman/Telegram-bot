@@ -343,12 +343,58 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
 }
 
 async function postNextToAll(kv: KVNamespace, token: string, groupId: string, extraChannelId?: string, discussionGroupId?: string): Promise<void> {
-  await postNext(kv, token, groupId);
-  if (extraChannelId) {
-    await postNext(kv, token, extraChannelId);
+  const questions = await getJSON<Question[]>(kv, 'questions', []);
+  
+  if (questions.length === 0) {
+    console.log('No questions available');
+    return;
   }
+  
+  const indexKey = `idx:${groupId}`;
+  const currentIndex = await getJSON<number>(kv, indexKey, 0);
+  
+  const question = questions[currentIndex];
+  const nextIndex = (currentIndex + 1) % questions.length;
+  
+  await putJSON(kv, indexKey, nextIndex);
+  
+  // Post to main group and channel (without answers)
+  const text = `<b>🧠 Hourly MCQ #${currentIndex + 1}</b>\n\n<b>${esc(question.question)}</b>\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}`;
+  
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: 'A', callback_data: `ans:${currentIndex}:A` },
+        { text: 'B', callback_data: `ans:${currentIndex}:B` },
+        { text: 'C', callback_data: `ans:${currentIndex}:C` },
+        { text: 'D', callback_data: `ans:${currentIndex}:D` }
+      ],
+      [
+        { text: '💬 Join Discussion', url: 'https://t.me/+u0P8X-ZWHU1jMDQ1' },
+        { text: '📊 Your Stats', callback_data: 'user:stats' }
+      ]
+    ]
+  };
+  
+  await sendMessage(token, groupId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
+  
+  if (extraChannelId) {
+    await sendMessage(token, extraChannelId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
+  }
+  
+  // Post to discussion group with answer included
   if (discussionGroupId) {
-    await postNext(kv, token, discussionGroupId);
+    const discussionText = `<b>🧠 Hourly MCQ #${currentIndex + 1}</b>\n\n<b>${esc(question.question)}</b>\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}\n\n<b>✅ Answer: ${question.answer}</b>\n\n<b>📝 Explanation:</b>\n${esc(question.explanation)}`;
+    
+    const discussionKeyboard = {
+      inline_keyboard: [
+        [
+          { text: '📊 Your Stats', callback_data: 'user:stats' }
+        ]
+      ]
+    };
+    
+    await sendMessage(token, discussionGroupId, discussionText, { reply_markup: discussionKeyboard, parse_mode: 'HTML' });
   }
 }
 
@@ -2236,8 +2282,8 @@ export default {
     try {
       await ensureKeys(env.STATE);
       await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
-      // Send 2 questions per schedule tick
-      for (let i = 0; i < 2; i++) {
+      // Send 1 question per schedule tick
+      for (let i = 0; i < 1; i++) {
         await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
       }
     } catch (error) {
