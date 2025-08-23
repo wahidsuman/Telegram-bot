@@ -1006,6 +1006,7 @@ export default {
                   [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
                   [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
+                  [{ text: '🔄 Reshuffle Upcoming', callback_data: 'admin:reshuffle' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1143,6 +1144,7 @@ export default {
                   [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
                   [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
+                  [{ text: '🔄 Reshuffle Upcoming', callback_data: 'admin:reshuffle' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1714,6 +1716,47 @@ export default {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
             await env.STATE.delete('admin:broadcast:pending');
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❎ Broadcast cancelled');
+          } else if (data === 'admin:reshuffle') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Reshuffling upcoming questions...');
+            
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const indexKey = `idx:${env.TARGET_GROUP_ID}`;
+            const currentIndex = await getJSON<number>(env.STATE, indexKey, 0);
+            
+            if (currentIndex >= questions.length) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ No upcoming questions to reshuffle. All questions have been posted.');
+              return new Response('OK');
+            }
+            
+            // Split questions into posted and upcoming
+            const postedQuestions = questions.slice(0, currentIndex);
+            const upcomingQuestions = questions.slice(currentIndex);
+            
+            if (upcomingQuestions.length === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ No upcoming questions to reshuffle.');
+              return new Response('OK');
+            }
+            
+            // Shuffle the upcoming questions using Fisher-Yates algorithm
+            for (let i = upcomingQuestions.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [upcomingQuestions[i], upcomingQuestions[j]] = [upcomingQuestions[j], upcomingQuestions[i]];
+            }
+            
+            // Combine posted and shuffled upcoming questions
+            const newQuestions = [...postedQuestions, ...upcomingQuestions];
+            
+            // Save the reshuffled questions
+            await putJSON(env.STATE, 'questions', newQuestions);
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+              `✅ Upcoming questions reshuffled successfully!\n\n` +
+              `📊 Statistics:\n` +
+              `• Posted questions: ${postedQuestions.length} (unchanged)\n` +
+              `• Upcoming questions: ${upcomingQuestions.length} (reshuffled)\n` +
+              `• Total questions: ${newQuestions.length}\n\n` +
+              `🔄 The order of upcoming questions has been randomized.`
+            );
           } else if (data === 'admin:manage') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
