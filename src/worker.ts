@@ -1007,6 +1007,7 @@ export default {
                   [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
                   [{ text: '🔄 Reshuffle Upcoming', callback_data: 'admin:reshuffle' }],
+                  [{ text: '🗑️ Delete URL/DOC Questions', callback_data: 'admin:deleteUrlDoc' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1145,6 +1146,7 @@ export default {
                   [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
                   [{ text: '🔄 Reshuffle Upcoming', callback_data: 'admin:reshuffle' }],
+                  [{ text: '🗑️ Delete URL/DOC Questions', callback_data: 'admin:deleteUrlDoc' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1756,6 +1758,57 @@ export default {
               `• Upcoming questions: ${upcomingQuestions.length} (reshuffled)\n` +
               `• Total questions: ${newQuestions.length}\n\n` +
               `🔄 The order of upcoming questions has been randomized.`
+            );
+          } else if (data === 'admin:deleteUrlDoc') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Scanning for URL/DOC questions...');
+            
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const totalQuestions = questions.length;
+            
+            if (totalQuestions === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ No questions in database to scan.');
+              return new Response('OK');
+            }
+            
+            // Find questions containing "https://" or "DOC"
+            const questionsToDelete: Question[] = [];
+            const questionsToKeep: Question[] = [];
+            
+            for (const question of questions) {
+              const questionText = question.question.toLowerCase();
+              const explanationText = question.explanation.toLowerCase();
+              
+              if (questionText.includes('https://') || 
+                  questionText.includes('doc') ||
+                  explanationText.includes('https://') || 
+                  explanationText.includes('doc')) {
+                questionsToDelete.push(question);
+              } else {
+                questionsToKeep.push(question);
+              }
+            }
+            
+            if (questionsToDelete.length === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ No questions containing "https://" or "DOC" found. Database is clean!');
+              return new Response('OK');
+            }
+            
+            // Save the filtered questions
+            await putJSON(env.STATE, 'questions', questionsToKeep);
+            
+            // Show sample of deleted questions
+            const sampleDeleted = questionsToDelete.slice(0, 3).map((q, i) => 
+              `${i + 1}. ${truncate(q.question, 80)}...`
+            ).join('\n');
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+              `✅ Successfully deleted ${questionsToDelete.length} questions containing "https://" or "DOC"!\n\n` +
+              `📊 Statistics:\n` +
+              `• Questions before: ${totalQuestions}\n` +
+              `• Questions deleted: ${questionsToDelete.length}\n` +
+              `• Questions remaining: ${questionsToKeep.length}\n\n` +
+              `📝 Sample deleted questions:\n${sampleDeleted}${questionsToDelete.length > 3 ? `\n... and ${questionsToDelete.length - 3} more` : ''}\n\n` +
+              `🗑️ All questions containing URLs or DOC references have been permanently removed.`
             );
 
           } else if (data === 'admin:manage') {
