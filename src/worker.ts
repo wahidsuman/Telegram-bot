@@ -1184,7 +1184,17 @@ export default {
               } else if (editDiscountPending && message.text) {
                 await handleDiscountButtonEditing(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId, message.text, editDiscountPending);
                 return new Response('OK');
-              } else if (message.text && (message.text.trim() === '/start' || message.text.trim() === '/admin')) {
+              } else if (message.text && (message.text.trim() === '/start' || message.text.trim() === '/admin' || message.text.trim() === '/cancel')) {
+              // Clear all pending states for cancel command
+              if (message.text.trim() === '/cancel') {
+                await env.STATE.delete('admin:edit:idx');
+                await env.STATE.delete('admin:broadcast:pending');
+                await env.STATE.delete('admin:reply:pending');
+                await env.STATE.delete('admin:addDiscount:pending');
+                await env.STATE.delete('admin:editDiscount:pending');
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ All pending operations cancelled. You can now upload questions normally.');
+                return new Response('OK');
+              }
               console.log('Admin panel requested by:', chatId, 'User:', message.from?.username, 'Text:', JSON.stringify(message.text));
               const keyboard = {
                 inline_keyboard: [
@@ -1268,6 +1278,9 @@ export default {
               }
 
             } else if (message.text) {
+              // Clear any pending edit states first
+              await env.STATE.delete('admin:edit:idx');
+              
               // Admin free-text template upload - try multiple questions first
               console.log('Processing admin text upload:', message.text.substring(0, 200));
               const multipleQuestions = parseMultipleQuestions(message.text);
