@@ -1057,6 +1057,7 @@ export default {
                   [{ text: '🔧 Fix Data Integrity', callback_data: 'admin:fixData' }],
                   [{ text: '🔄 Restore from Backup', callback_data: 'admin:restoreBackup' }],
                   [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
+                  [{ text: '🚨 Fix Questions 65+', callback_data: 'admin:fixFrom65' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1199,6 +1200,7 @@ export default {
                   [{ text: '🔧 Fix Data Integrity', callback_data: 'admin:fixData' }],
                   [{ text: '🔄 Restore from Backup', callback_data: 'admin:restoreBackup' }],
                   [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
+                  [{ text: '🚨 Fix Questions 65+', callback_data: 'admin:fixFrom65' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -2075,6 +2077,70 @@ export default {
               `• Answer text makes sense with the question\n` +
               `• Explanation refers to the correct answer\n\n` +
               `🔄 If these look wrong, run "Fix Data Integrity" again.`
+            );
+          } else if (data === 'admin:fixFrom65') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Fixing questions from 65+ (reshuffle corruption)...');
+            
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const totalQuestions = questions.length;
+            
+            if (totalQuestions < 65) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Not enough questions in database (need at least 65).');
+              return new Response('OK');
+            }
+            
+            // Create backup first
+            await putJSON(env.STATE, 'questions_backup_before_65fix', questions);
+            
+            // Get current index to know where we are
+            const indexKey = `idx:${env.TARGET_GROUP_ID}`;
+            const currentIndex = await getJSON<number>(env.STATE, indexKey, 0);
+            
+            // Questions 0-64 are correct (65 questions), 65+ are corrupted
+            const correctQuestions = questions.slice(0, 65); // Keep first 65 questions (0-64)
+            const corruptedQuestions = questions.slice(65);  // Questions from 65+ are corrupted
+            
+            if (corruptedQuestions.length === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ No questions after 65 found. Database appears clean.');
+              return new Response('OK');
+            }
+            
+            // Remove all corrupted questions (65+)
+            const fixedQuestions = correctQuestions;
+            
+            // Save the fixed questions
+            await putJSON(env.STATE, 'questions', fixedQuestions);
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+              `🚨 **TARGETED FIX COMPLETED - Questions 65+ Removed**\n\n` +
+              `📊 **Statistics:**\n` +
+              `• Questions 1-65: **PRESERVED** (these were correct)\n` +
+              `• Questions 66+: **REMOVED** (${corruptedQuestions.length} corrupted questions)\n` +
+              `• Current posting index: ${currentIndex + 1}\n` +
+              `• Questions remaining: ${fixedQuestions.length}\n\n` +
+              `💾 **Backup created:** questions_backup_before_65fix\n\n` +
+              `✅ **Result:**\n` +
+              `• ✅ Questions 1-65 are intact and correct\n` +
+              `• ❌ Corrupted questions 66+ have been removed\n` +
+              `• 🔄 Bot will continue posting correctly from where it left off\n\n` +
+              `💡 **Next step:** Upload new questions to replace the removed ones.\n\n` +
+              `⚠️ **Note:** This preserves all correctly posted questions and removes only the corrupted ones from the reshuffle.`
+            );
+            
+            // Show sample of what was preserved vs removed
+            const preservedSample = correctQuestions.slice(60, 65).map((q, i) => 
+              `Q${61 + i}: ${q.question.substring(0, 60)}... [Answer: ${q.answer}]`
+            ).join('\n');
+            
+            const removedSample = corruptedQuestions.slice(0, 5).map((q, i) => 
+              `Q${66 + i}: ${q.question.substring(0, 60)}... [Answer: ${q.answer}] ❌`
+            ).join('\n');
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+              `📋 **SAMPLE OF CHANGES:**\n\n` +
+              `✅ **PRESERVED (Questions 61-65):**\n${preservedSample}\n\n` +
+              `❌ **REMOVED (Questions 66-70):**\n${removedSample}${corruptedQuestions.length > 5 ? `\n... and ${corruptedQuestions.length - 5} more corrupted questions` : ''}\n\n` +
+              `🎯 **The bot will now post only correct questions!**`
             );
 
           } else if (data === 'admin:manage') {
