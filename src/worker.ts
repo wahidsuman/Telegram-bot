@@ -632,6 +632,7 @@ function isSimilarQuestion(q1: Question, q2: Question): boolean {
 
 function parseAdminTemplate(text: string): { question: string; options: { A: string; B: string; C: string; D: string }; explanation: string; answer?: 'A' | 'B' | 'C' | 'D' } | null {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  console.log('Parsing lines:', lines);
   const data: Record<string, string> = {};
   
   // Handle both formats:
@@ -639,7 +640,7 @@ function parseAdminTemplate(text: string): { question: string; options: { A: str
   // 2. Question 1, A =, B =, C =, D =, Answer =, Explanation =
   
   for (const line of lines) {
-    // Try format 1: key=value
+    // Try format 1: key=value (including Question=, Answer=, Explanation=)
     let m = line.match(/^([A-Za-z]+)\s*=\s*(.*)$/);
     if (m) {
       const key = m[1].toLowerCase();
@@ -1268,7 +1269,9 @@ export default {
 
             } else if (message.text) {
               // Admin free-text template upload - try multiple questions first
+              console.log('Processing admin text upload:', message.text.substring(0, 200));
               const multipleQuestions = parseMultipleQuestions(message.text);
+              console.log('Parsed multiple questions:', multipleQuestions.length);
               
               if (multipleQuestions.length > 0) {
                 // Process multiple questions
@@ -1725,7 +1728,20 @@ export default {
           } else if (data === 'admin:upload') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
-              'Please send a JSON file with questions. Format should be an array of objects or JSONL (one object per line).');
+              '📤 **Upload Questions**\n\n' +
+              '**Option 1: Text Format**\n' +
+              'Send questions in this format:\n\n' +
+              'Question=Your question here\n' +
+              'A=Option A\n' +
+              'B=Option B\n' +
+              'C=Option C\n' +
+              'D=Option D\n' +
+              'Answer=A\n' +
+              'Explanation=Your explanation\n\n' +
+              '**Option 2: JSON File**\n' +
+              'Send a JSON file with questions array or JSONL format.\n\n' +
+              '**Option 3: CSV File**\n' +
+              'Send a CSV file with columns: question, A, B, C, D, answer, explanation');
               
           } else if (data === 'admin:daily') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
