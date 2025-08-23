@@ -1052,8 +1052,9 @@ export default {
                   [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
                   [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
-                  [{ text: '🔄 Reshuffle Upcoming', callback_data: 'admin:reshuffle' }],
+                  [{ text: '🔄 Reshuffle Upcoming (DISABLED)', callback_data: 'admin:reshuffleDisabled' }],
                   [{ text: '🗑️ Delete URL/DOC Questions', callback_data: 'admin:deleteUrlDoc' }],
+                  [{ text: '🔧 Fix Data Integrity', callback_data: 'admin:fixData' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1191,8 +1192,9 @@ export default {
                   [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
                   [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
-                  [{ text: '🔄 Reshuffle Upcoming', callback_data: 'admin:reshuffle' }],
+                  [{ text: '🔄 Reshuffle Upcoming (DISABLED)', callback_data: 'admin:reshuffleDisabled' }],
                   [{ text: '🗑️ Delete URL/DOC Questions', callback_data: 'admin:deleteUrlDoc' }],
+                  [{ text: '🔧 Fix Data Integrity', callback_data: 'admin:fixData' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1855,6 +1857,85 @@ export default {
               `• Questions remaining: ${questionsToKeep.length}\n\n` +
               `📝 Sample deleted questions:\n${sampleDeleted}${questionsToDelete.length > 3 ? `\n... and ${questionsToDelete.length - 3} more` : ''}\n\n` +
               `🗑️ All questions containing URLs or DOC references have been permanently removed.`
+            );
+          } else if (data === 'admin:fixData') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Checking data integrity...');
+            
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const totalQuestions = questions.length;
+            
+            if (totalQuestions === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ No questions in database to check.');
+              return new Response('OK');
+            }
+            
+            let fixedCount = 0;
+            let errorCount = 0;
+            const fixedQuestions: Question[] = [];
+            
+            for (let i = 0; i < questions.length; i++) {
+              const q = questions[i];
+              
+              // Check if question has all required fields
+              if (!q.question || !q.options || !q.answer || !q.explanation) {
+                errorCount++;
+                continue; // Skip malformed questions
+              }
+              
+              // Validate answer is A, B, C, or D
+              if (!['A', 'B', 'C', 'D'].includes(q.answer)) {
+                errorCount++;
+                continue; // Skip questions with invalid answers
+              }
+              
+              // Validate options exist
+              if (!q.options.A || !q.options.B || !q.options.C || !q.options.D) {
+                errorCount++;
+                continue; // Skip questions with missing options
+              }
+              
+              // Clean and fix the question
+              const fixedQuestion: Question = {
+                question: q.question.trim(),
+                options: {
+                  A: q.options.A.trim(),
+                  B: q.options.B.trim(),
+                  C: q.options.C.trim(),
+                  D: q.options.D.trim()
+                },
+                answer: q.answer,
+                explanation: q.explanation.trim()
+              };
+              
+              fixedQuestions.push(fixedQuestion);
+              fixedCount++;
+            }
+            
+            // Save the cleaned questions
+            await putJSON(env.STATE, 'questions', fixedQuestions);
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+              `✅ Data integrity check and fix completed!\n\n` +
+              `📊 Statistics:\n` +
+              `• Questions checked: ${totalQuestions}\n` +
+              `• Questions fixed: ${fixedCount}\n` +
+              `• Questions removed: ${errorCount}\n` +
+              `• Questions remaining: ${fixedQuestions.length}\n\n` +
+              `🔧 All questions now have:\n` +
+              `• Valid question text\n` +
+              `• Complete options (A, B, C, D)\n` +
+              `• Valid answer (A, B, C, or D)\n` +
+              `• Proper explanation\n\n` +
+              `✅ Database is now clean and consistent!`
+            );
+          } else if (data === 'admin:reshuffleDisabled') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Reshuffle disabled');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+              `🚫 Reshuffle feature is temporarily disabled!\n\n` +
+              `⚠️ The reshuffle feature was causing data integrity issues.\n` +
+              `❌ Questions, answers, and explanations were getting mismatched.\n\n` +
+              `🔧 Use "Fix Data Integrity" to clean your database first.\n` +
+              `📝 Contact admin to re-enable reshuffle with proper safeguards.`
             );
 
           } else if (data === 'admin:manage') {
