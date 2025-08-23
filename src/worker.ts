@@ -1055,6 +1055,7 @@ export default {
                   [{ text: '🔄 Reshuffle Upcoming (DISABLED)', callback_data: 'admin:reshuffleDisabled' }],
                   [{ text: '🗑️ Delete URL/DOC Questions', callback_data: 'admin:deleteUrlDoc' }],
                   [{ text: '🔧 Fix Data Integrity', callback_data: 'admin:fixData' }],
+                  [{ text: '🔄 Restore from Backup', callback_data: 'admin:restoreBackup' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1195,6 +1196,7 @@ export default {
                   [{ text: '🔄 Reshuffle Upcoming (DISABLED)', callback_data: 'admin:reshuffleDisabled' }],
                   [{ text: '🗑️ Delete URL/DOC Questions', callback_data: 'admin:deleteUrlDoc' }],
                   [{ text: '🔧 Fix Data Integrity', callback_data: 'admin:fixData' }],
+                  [{ text: '🔄 Restore from Backup', callback_data: 'admin:restoreBackup' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1859,7 +1861,7 @@ export default {
               `🗑️ All questions containing URLs or DOC references have been permanently removed.`
             );
           } else if (data === 'admin:fixData') {
-            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Checking data integrity...');
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Creating backup and checking data integrity...');
             
             const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
             const totalQuestions = questions.length;
@@ -1869,9 +1871,14 @@ export default {
               return new Response('OK');
             }
             
+            // Create backup first
+            await putJSON(env.STATE, 'questions_backup_before_fix', questions);
+            
             let fixedCount = 0;
             let errorCount = 0;
+            let corruptedCount = 0;
             const fixedQuestions: Question[] = [];
+            const corruptedQuestions: string[] = [];
             
             for (let i = 0; i < questions.length; i++) {
               const q = questions[i];
@@ -1879,19 +1886,29 @@ export default {
               // Check if question has all required fields
               if (!q.question || !q.options || !q.answer || !q.explanation) {
                 errorCount++;
-                continue; // Skip malformed questions
+                corruptedQuestions.push(`Q${i + 1}: Missing required fields`);
+                continue;
               }
               
               // Validate answer is A, B, C, or D
               if (!['A', 'B', 'C', 'D'].includes(q.answer)) {
                 errorCount++;
-                continue; // Skip questions with invalid answers
+                corruptedQuestions.push(`Q${i + 1}: Invalid answer "${q.answer}"`);
+                continue;
               }
               
               // Validate options exist
               if (!q.options.A || !q.options.B || !q.options.C || !q.options.D) {
                 errorCount++;
-                continue; // Skip questions with missing options
+                corruptedQuestions.push(`Q${i + 1}: Missing options`);
+                continue;
+              }
+              
+              // Check for potential mismatches (answer doesn't match any option)
+              const answerText = q.options[q.answer as keyof typeof q.options];
+              if (!answerText || answerText.trim() === '') {
+                corruptedCount++;
+                corruptedQuestions.push(`Q${i + 1}: Answer "${q.answer}" has empty text`);
               }
               
               // Clean and fix the question
@@ -1914,20 +1931,43 @@ export default {
             // Save the cleaned questions
             await putJSON(env.STATE, 'questions', fixedQuestions);
             
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
-              `✅ Data integrity check and fix completed!\n\n` +
-              `📊 Statistics:\n` +
-              `• Questions checked: ${totalQuestions}\n` +
+            // Create detailed report
+            const report = `🔧 **DATA INTEGRITY FIX REPORT**\n\n` +
+              `📊 **Statistics:**\n` +
+              `• Total questions checked: ${totalQuestions}\n` +
               `• Questions fixed: ${fixedCount}\n` +
               `• Questions removed: ${errorCount}\n` +
+              `• Questions with potential issues: ${corruptedCount}\n` +
               `• Questions remaining: ${fixedQuestions.length}\n\n` +
-              `🔧 All questions now have:\n` +
-              `• Valid question text\n` +
-              `• Complete options (A, B, C, D)\n` +
-              `• Valid answer (A, B, C, or D)\n` +
-              `• Proper explanation\n\n` +
-              `✅ Database is now clean and consistent!`
-            );
+              `💾 **Backup created:** questions_backup_before_fix\n\n` +
+              `🔍 **Issues found:**\n${corruptedQuestions.slice(0, 10).join('\n')}${corruptedQuestions.length > 10 ? `\n... and ${corruptedQuestions.length - 10} more issues` : ''}\n\n` +
+              `✅ **Database cleaned and validated!**\n\n` +
+              `📋 **All remaining questions now have:**\n` +
+              `• ✅ Valid question text\n` +
+              `• ✅ Complete options (A, B, C, D)\n` +
+              `• ✅ Valid answer (A, B, C, or D)\n` +
+              `• ✅ Proper explanation\n\n` +
+              `🔄 **Test a few questions to verify the fix worked!**`;
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, report);
+            
+            // Send sample of fixed questions for verification
+            if (fixedQuestions.length > 0) {
+              const sampleQuestions = fixedQuestions.slice(0, 3).map((q, i) => 
+                `**Sample Q${i + 1}:**\n` +
+                `Q: ${q.question.substring(0, 100)}...\n` +
+                `A: ${q.options.A.substring(0, 50)}...\n` +
+                `B: ${q.options.B.substring(0, 50)}...\n` +
+                `C: ${q.options.C.substring(0, 50)}...\n` +
+                `D: ${q.options.D.substring(0, 50)}...\n` +
+                `✅ Answer: ${q.answer}\n` +
+                `📝 Explanation: ${q.explanation.substring(0, 100)}...`
+              ).join('\n\n');
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+                `📋 **Sample Fixed Questions (for verification):**\n\n${sampleQuestions}`
+              );
+            }
           } else if (data === 'admin:reshuffleDisabled') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Reshuffle disabled');
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
@@ -1936,6 +1976,37 @@ export default {
               `❌ Questions, answers, and explanations were getting mismatched.\n\n` +
               `🔧 Use "Fix Data Integrity" to clean your database first.\n` +
               `📝 Contact admin to re-enable reshuffle with proper safeguards.`
+            );
+          } else if (data === 'admin:restoreBackup') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Checking for backup...');
+            
+            const backup = await getJSON<Question[]>(env.STATE, 'questions_backup_before_fix', null);
+            
+            if (!backup) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+                `❌ No backup found!\n\n` +
+                `💡 Run "Fix Data Integrity" first to create a backup.`
+              );
+              return new Response('OK');
+            }
+            
+            // Create backup of current state before restoring
+            const currentQuestions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            await putJSON(env.STATE, 'questions_backup_before_restore', currentQuestions);
+            
+            // Restore from backup
+            await putJSON(env.STATE, 'questions', backup);
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+              `✅ **Backup Restored Successfully!**\n\n` +
+              `📊 **Statistics:**\n` +
+              `• Questions restored: ${backup.length}\n` +
+              `• Previous questions: ${currentQuestions.length}\n\n` +
+              `💾 **Backups available:**\n` +
+              `• questions_backup_before_fix (original)\n` +
+              `• questions_backup_before_restore (current)\n\n` +
+              `⚠️ **Note:** This restored the original corrupted data.\n` +
+              `🔧 Run "Fix Data Integrity" again to clean it properly.`
             );
 
           } else if (data === 'admin:manage') {
