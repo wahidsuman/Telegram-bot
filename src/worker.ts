@@ -705,11 +705,21 @@ function parseMultipleQuestions(text: string): Array<{ question: string; options
   
   // Split by "Question=" to separate multiple questions
   const questionBlocks = text.split(/(?=Question=)/).filter(block => block.trim());
+  console.log('Question blocks found:', questionBlocks.length);
   
-  for (const block of questionBlocks) {
+  for (let i = 0; i < questionBlocks.length; i++) {
+    const block = questionBlocks[i];
+    console.log(`Parsing block ${i + 1}:`, block.substring(0, 100));
     const parsed = parseAdminTemplate(block);
     if (parsed) {
+      console.log(`Block ${i + 1} parsed successfully:`, {
+        question: parsed.question.substring(0, 50),
+        answer: parsed.answer,
+        options: parsed.options
+      });
       questions.push(parsed);
+    } else {
+      console.log(`Block ${i + 1} failed to parse`);
     }
   }
   
@@ -1318,6 +1328,19 @@ export default {
                 }
                 
                 if (added > 0) {
+                  // Verify data integrity before saving
+                  console.log('Verifying data integrity before saving...');
+                  for (let i = 0; i < list.length; i++) {
+                    const q = list[i];
+                    console.log(`Question ${i + 1} verification:`, {
+                      question: q.question.substring(0, 50),
+                      answer: q.answer,
+                      optionA: q.options.A.substring(0, 30),
+                      optionB: q.options.B.substring(0, 30),
+                      optionC: q.options.C.substring(0, 30),
+                      optionD: q.options.D.substring(0, 30)
+                    });
+                  }
                   await putJSON(env.STATE, 'questions', list);
                 }
                 
