@@ -310,9 +310,11 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
   // Use sharded system to get the question
   const question = await readQuestionByGlobalIndex(kv, currentIndex);
   if (!question) {
-    console.log(`Question not found at index ${currentIndex}`);
+    console.log(`Question not found at index ${currentIndex}, total questions: ${total}`);
     return;
   }
+  
+  console.log(`Posting question at index ${currentIndex}: ${question.question.substring(0, 50)}...`);
   
   const nextIndex = (currentIndex + 1) % total;
   
@@ -737,8 +739,15 @@ async function readQuestionByGlobalIndex(kv: KVNamespace, globalIndex: number): 
   const normIndex = ((globalIndex % total) + total) % total;
   const { shard, offset } = computeShardLocation(normIndex);
   const items = await readShard(kv, shard);
-  if (offset < 0 || offset >= items.length) return null;
-  return items[offset] || null;
+  if (offset < 0 || offset >= items.length) {
+    console.log(`readQuestionByGlobalIndex: invalid offset ${offset} for shard ${shard}, items length: ${items.length}`);
+    return null;
+  }
+  const question = items[offset] || null;
+  if (question) {
+    console.log(`readQuestionByGlobalIndex: found question at globalIndex ${globalIndex} (normIndex: ${normIndex}, shard: ${shard}, offset: ${offset}): ${question.question.substring(0, 50)}...`);
+  }
+  return question;
 }
 
 async function appendQuestionsSharded(kv: KVNamespace, items: Question[]): Promise<void> {
@@ -1282,13 +1291,11 @@ export default {
             const [, qidStr, answer] = data.split(':');
             const qid = parseInt(qidStr);
             
-            // Prefer sharded read for performance; fallback to legacy array
-            let question: Question | null = await readQuestionByGlobalIndex(env.STATE, qid);
-            if (!question) {
-              const legacy = await getJSON<Question[]>(env.STATE, 'questions', []);
-              if (qid >= 0 && qid < legacy.length) question = legacy[qid];
-            }
+            // Use sharded system only
+            const question: Question | null = await readQuestionByGlobalIndex(env.STATE, qid);
+            console.log(`Answer callback for qid ${qid}, question found: ${!!question}`);
             if (question) {
+              console.log(`Question at index ${qid}: ${question.question.substring(0, 50)}...`);
               const isCorrect = answer === question.answer;
               
               await incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata');
@@ -1580,6 +1587,48 @@ export default {
           await putJSON(env.STATE, 'questions', unique);
         }
         return new Response(`Dedupe complete. Removed ${removed} duplicate(s). Total now: ${unique.length}`);
+      } else if (url.pathname === '/debug' && request.method === 'GET') {
+        // Debug endpoint to check system state
+        const legacyQuestions = await getJSON<Question[]>(env.STATE, 'questions', []);
+        const shardedTotal = await getTotalCount(env.STATE);
+        const shardedQuestions = await getAllQuestionsSharded(env.STATE);
+        const currentIndex = await getJSON<number>(env.STATE, `idx:${env.TARGET_GROUP_ID}`, 0);
+        
+        let debugInfo = `🔍 Debug Info:\n\n`;
+        debugInfo += `Legacy questions: ${legacyQuestions.length}\n`;
+        debugInfo += `Sharded total: ${shardedTotal}\n`;
+        debugInfo += `Sharded questions: ${shardedQuestions.length}\n`;
+        debugInfo += `Current index: ${currentIndex}\n\n`;
+        
+        if (legacyQuestions.length > 0 && shardedQuestions.length > 0) {
+          debugInfo += `Comparing first question:\n`;
+          debugInfo += `Legacy: ${legacyQuestions[0].question.substring(0, 50)}...\n`;
+          debugInfo += `Sharded: ${shardedQuestions[0].question.substring(0, 50)}...\n\n`;
+          
+          if (currentIndex < legacyQuestions.length && currentIndex < shardedQuestions.length) {
+            debugInfo += `Current question comparison:\n`;
+            debugInfo += `Legacy[${currentIndex}]: ${legacyQuestions[currentIndex].question.substring(0, 50)}...\n`;
+            debugInfo += `Sharded[${currentIndex}]: ${shardedQuestions[currentIndex].question.substring(0, 50)}...\n`;
+          }
+        }
+        
+        return new Response(debugInfo);
+      } else if (url.pathname === '/force-migrate' && request.method === 'GET') {
+        // Force migration from legacy to sharded system
+        const legacyQuestions = await getJSON<Question[]>(env.STATE, 'questions', []);
+        if (legacyQuestions.length > 0) {
+          // Clear existing sharded system
+          await setShardCount(env.STATE, 0);
+          await setTotalCount(env.STATE, 0);
+          
+          // Migrate all questions to sharded system
+          await appendQuestionsSharded(env.STATE, legacyQuestions);
+          
+          const newTotal = await getTotalCount(env.STATE);
+          return new Response(`✅ Force migration complete. Migrated ${legacyQuestions.length} questions to sharded system. New total: ${newTotal}`);
+        } else {
+          return new Response('No legacy questions to migrate.');
+        }
       }
       
       return new Response('Not Found', { status: 404 });
