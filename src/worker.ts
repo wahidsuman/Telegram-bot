@@ -910,7 +910,8 @@ export default {
                   [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
                   [{ text: '📣 Broadcast to Group', callback_data: 'admin:broadcast' }],
                   [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
-                  [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }]
+                  [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
+                  [{ text: '🔧 Fix Everything', callback_data: 'admin:fixEverything' }]
                 ]
               };
               
@@ -1546,6 +1547,26 @@ export default {
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `<pre>${esc(chunk)}</pre>`);
               }
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `Total: ${questions.length} questions.`);
+            }
+          } else if (data === 'admin:fixEverything') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '🔧 Starting fix...');
+            
+            try {
+              // Call the fix-everything endpoint internally
+              const fixResult = await fetch(`${new URL(request.url).origin}/fix-everything`);
+              const resultText = await fixResult.text();
+              
+              // Send the result in chunks if it's too long
+              if (resultText.length > 4000) {
+                const chunks = resultText.match(/.{1,4000}/g) || [];
+                for (let i = 0; i < chunks.length; i++) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `Fix Result (Part ${i + 1}/${chunks.length}):\n\n${chunks[i]}`);
+                }
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `✅ Fix Complete!\n\n${resultText}`);
+              }
+            } catch (error) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `❌ Fix failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
             }
           } else if (data.startsWith('admin:edit:')) {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
