@@ -1052,6 +1052,10 @@ export default {
             console.log('Start command received:', { chatId, adminChatId: env.ADMIN_CHAT_ID, isAdmin, text: message.text });
             
             if (isAdmin) {
+              // Check if posts are stopped
+              const isStopped = await env.STATE.get('admin:postsStopped');
+              const stopButtonText = isStopped === '1' ? '🟢 Start Hourly Posts' : '⏸️ Stop Hourly Posts';
+              
               // Show admin panel
               const keyboard = {
                 inline_keyboard: [
@@ -1063,7 +1067,7 @@ export default {
                   [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
                   [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
-                  [{ text: '🔄 Reshuffle Upcoming (DISABLED)', callback_data: 'admin:reshuffleDisabled' }],
+                  [{ text: stopButtonText, callback_data: 'admin:stopPosts' }],
                   [{ text: '🗑️ Delete URL/DOC Questions', callback_data: 'admin:deleteUrlDoc' }],
                   [{ text: '🔧 Fix Data Integrity', callback_data: 'admin:fixData' }],
                   [{ text: '🔄 Restore from Backup', callback_data: 'admin:restoreBackup' }],
@@ -1218,6 +1222,11 @@ export default {
                 return new Response('OK');
               }
               console.log('Admin panel requested by:', chatId, 'User:', message.from?.username, 'Text:', JSON.stringify(message.text));
+              
+              // Check if posts are stopped
+              const isStopped = await env.STATE.get('admin:postsStopped');
+              const stopButtonText = isStopped === '1' ? '🟢 Start Hourly Posts' : '⏸️ Stop Hourly Posts';
+              
               const keyboard = {
                 inline_keyboard: [
                   [{ text: '📤 Upload Questions', callback_data: 'admin:upload' }],
@@ -1228,7 +1237,7 @@ export default {
                   [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
                   [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
-                  [{ text: '🔄 Reshuffle Upcoming (DISABLED)', callback_data: 'admin:reshuffleDisabled' }],
+                  [{ text: stopButtonText, callback_data: 'admin:stopPosts' }],
                   [{ text: '🗑️ Delete URL/DOC Questions', callback_data: 'admin:deleteUrlDoc' }],
                   [{ text: '🔧 Fix Data Integrity', callback_data: 'admin:fixData' }],
                   [{ text: '🔄 Restore from Backup', callback_data: 'admin:restoreBackup' }],
@@ -1836,48 +1845,32 @@ export default {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
             await env.STATE.delete('admin:broadcast:pending');
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❎ Broadcast cancelled');
-          } else if (data === 'admin:reshuffle') {
-            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Reshuffling upcoming questions...');
-            
-            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
-            const indexKey = `idx:${env.TARGET_GROUP_ID}`;
-            const currentIndex = await getJSON<number>(env.STATE, indexKey, 0);
-            
-            if (currentIndex >= questions.length) {
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ No upcoming questions to reshuffle. All questions have been posted.');
-              return new Response('OK');
-            }
-            
-            // Split questions into posted and upcoming
-            const postedQuestions = questions.slice(0, currentIndex);
-            const upcomingQuestions = questions.slice(currentIndex);
-            
-            if (upcomingQuestions.length === 0) {
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ No upcoming questions to reshuffle.');
-              return new Response('OK');
-            }
-            
-            // Shuffle the upcoming questions using Fisher-Yates algorithm
-            for (let i = upcomingQuestions.length - 1; i > 0; i--) {
-              const j = Math.floor(Math.random() * (i + 1));
-              [upcomingQuestions[i], upcomingQuestions[j]] = [upcomingQuestions[j], upcomingQuestions[i]];
-            }
-            
-            // Combine posted and shuffled upcoming questions
-            const newQuestions = [...postedQuestions, ...upcomingQuestions];
-            
-            // Save the reshuffled questions
-            await putJSON(env.STATE, 'questions', newQuestions);
-            
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
-              `✅ Upcoming questions reshuffled successfully!\n\n` +
-              `📊 Statistics:\n` +
-              `• Posted questions: ${postedQuestions.length} (unchanged)\n` +
-              `• Upcoming questions: ${upcomingQuestions.length} (reshuffled)\n` +
-              `• Total questions: ${newQuestions.length}\n\n` +
-              `🔄 The order of upcoming questions has been randomized.`
-            );
-          } else if (data === 'admin:deleteUrlDoc') {
+
+                      } else if (data === 'admin:stopPosts') {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Stopping hourly posts...');
+              
+              const isStopped = await env.STATE.get('admin:postsStopped');
+              
+              if (isStopped === '1') {
+                // Start posts
+                await env.STATE.delete('admin:postsStopped');
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+                  `✅ **Hourly posts STARTED!**\n\n` +
+                  `🟢 Bot will now post questions every hour automatically.\n` +
+                  `⏰ Next post will be at the top of the next hour.\n\n` +
+                  `📊 You can still use "Post Next Now" for manual posts.`
+                );
+              } else {
+                // Stop posts
+                await env.STATE.put('admin:postsStopped', '1');
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+                  `⏸️ **Hourly posts STOPPED!**\n\n` +
+                  `🔴 Bot will NOT post questions automatically.\n` +
+                  `📤 You can still use "Post Next Now" for manual posts.\n\n` +
+                  `🟢 Click "Stop Hourly Posts" again to restart automatic posting.`
+                );
+              }
+            } else if (data === 'admin:deleteUrlDoc') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Scanning for URL/DOC questions...');
             
             const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
@@ -2067,15 +2060,7 @@ export default {
                 `📋 **Sample Fixed Questions (VERIFY THESE MANUALLY):**\n\n${sampleQuestions}`
               );
             }
-          } else if (data === 'admin:reshuffleDisabled') {
-            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Reshuffle disabled');
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
-              `🚫 Reshuffle feature is temporarily disabled!\n\n` +
-              `⚠️ The reshuffle feature was causing data integrity issues.\n` +
-              `❌ Questions, answers, and explanations were getting mismatched.\n\n` +
-              `🔧 Use "Fix Data Integrity" to clean your database first.\n` +
-              `📝 Contact admin to re-enable reshuffle with proper safeguards.`
-            );
+
           } else if (data === 'admin:restoreBackup') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Checking for backup...');
             
@@ -2631,6 +2616,13 @@ export default {
   
   async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     try {
+      // Check if posts are stopped
+      const isStopped = await env.STATE.get('admin:postsStopped');
+      if (isStopped === '1') {
+        console.log('Hourly posts are stopped. Skipping scheduled post.');
+        return;
+      }
+      
       await ensureKeys(env.STATE);
       await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
       // Send 1 question per schedule tick
