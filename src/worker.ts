@@ -297,6 +297,9 @@ async function incrementStatsFirstAttemptOnly(kv: KVNamespace, userId: number, q
 }
 
 async function postNext(kv: KVNamespace, token: string, chatId: string): Promise<void> {
+  // First, ensure we're using the sharded system consistently
+  await ensureShardedInitialized(kv);
+  
   const total = await getTotalCount(kv);
   
   if (total === 0) {
@@ -314,7 +317,7 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
     return;
   }
   
-  console.log(`Posting question at index ${currentIndex}: ${question.question.substring(0, 50)}...`);
+
   
   const nextIndex = (currentIndex + 1) % total;
   
@@ -744,9 +747,7 @@ async function readQuestionByGlobalIndex(kv: KVNamespace, globalIndex: number): 
     return null;
   }
   const question = items[offset] || null;
-  if (question) {
-    console.log(`readQuestionByGlobalIndex: found question at globalIndex ${globalIndex} (normIndex: ${normIndex}, shard: ${shard}, offset: ${offset}): ${question.question.substring(0, 50)}...`);
-  }
+
   return question;
 }
 
@@ -780,11 +781,31 @@ async function appendQuestionsSharded(kv: KVNamespace, items: Question[]): Promi
 async function ensureShardedInitialized(kv: KVNamespace): Promise<void> {
   const shards = await getShardCount(kv);
   const total = await getTotalCount(kv);
-  if (shards === 0 && total === 0) {
-    // If legacy 'questions' exists, do a lazy migration of counts only
-    const legacy = await getJSON<Question[]>(kv, 'questions', []);
-    if (legacy.length > 0) {
-      // Write legacy into shards in batches
+  const legacy = await getJSON<Question[]>(kv, 'questions', []);
+  
+  // If no sharded system exists, migrate from legacy
+  if (shards === 0 && total === 0 && legacy.length > 0) {
+    // Write legacy into shards in batches
+    const batches: Question[][] = [];
+    for (let i = 0; i < legacy.length; i += SHARD_SIZE) {
+      batches.push(legacy.slice(i, i + SHARD_SIZE));
+    }
+    for (let si = 0; si < batches.length; si++) {
+      await writeShard(kv, si, batches[si]);
+    }
+    await setShardCount(kv, batches.length);
+    await setTotalCount(kv, legacy.length);
+  } else if (shards === 0 && total === 0) {
+    // No questions in either system
+    await setShardCount(kv, 0);
+    await setTotalCount(kv, 0);
+  } else if (legacy.length > 0 && total > 0) {
+    // Both systems exist, ensure they're in sync
+    const shardedQuestions = await getAllQuestionsSharded(kv);
+    if (legacy.length !== shardedQuestions.length) {
+      // Counts don't match, rebuild sharded system from legacy
+      await setShardCount(kv, 0);
+      await setTotalCount(kv, 0);
       const batches: Question[][] = [];
       for (let i = 0; i < legacy.length; i += SHARD_SIZE) {
         batches.push(legacy.slice(i, i + SHARD_SIZE));
@@ -794,9 +815,6 @@ async function ensureShardedInitialized(kv: KVNamespace): Promise<void> {
       }
       await setShardCount(kv, batches.length);
       await setTotalCount(kv, legacy.length);
-    } else {
-      await setShardCount(kv, 0);
-      await setTotalCount(kv, 0);
     }
   }
 }
@@ -1291,11 +1309,12 @@ export default {
             const [, qidStr, answer] = data.split(':');
             const qid = parseInt(qidStr);
             
+            // Ensure we're using the sharded system consistently
+            await ensureShardedInitialized(env.STATE);
+            
             // Use sharded system only
             const question: Question | null = await readQuestionByGlobalIndex(env.STATE, qid);
-            console.log(`Answer callback for qid ${qid}, question found: ${!!question}`);
             if (question) {
-              console.log(`Question at index ${qid}: ${question.question.substring(0, 50)}...`);
               const isCorrect = answer === question.answer;
               
               await incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata');
@@ -1628,6 +1647,81 @@ export default {
           return new Response(`✅ Force migration complete. Migrated ${legacyQuestions.length} questions to sharded system. New total: ${newTotal}`);
         } else {
           return new Response('No legacy questions to migrate.');
+        }
+      } else if (url.pathname === '/fix-questions' && request.method === 'GET') {
+        // Comprehensive fix to ensure question consistency
+        const legacyQuestions = await getJSON<Question[]>(env.STATE, 'questions', []);
+        const shardedTotal = await getTotalCount(env.STATE);
+        const shardedQuestions = await getAllQuestionsSharded(env.STATE);
+        
+        let result = `🔧 Fixing Question Consistency:\n\n`;
+        result += `Legacy questions: ${legacyQuestions.length}\n`;
+        result += `Sharded questions: ${shardedQuestions.length}\n`;
+        result += `Sharded total count: ${shardedTotal}\n\n`;
+        
+        if (legacyQuestions.length > 0 && shardedQuestions.length === 0) {
+          // No sharded questions, migrate from legacy
+          await setShardCount(env.STATE, 0);
+          await setTotalCount(env.STATE, 0);
+          await appendQuestionsSharded(env.STATE, legacyQuestions);
+          result += `✅ Migrated ${legacyQuestions.length} questions from legacy to sharded system.\n`;
+        } else if (legacyQuestions.length > 0 && shardedQuestions.length > 0) {
+          // Both systems have questions, check if they match
+          if (legacyQuestions.length === shardedQuestions.length) {
+            // Check if questions are the same
+            let matches = 0;
+            for (let i = 0; i < legacyQuestions.length; i++) {
+              if (legacyQuestions[i].question === shardedQuestions[i].question) {
+                matches++;
+              }
+            }
+            result += `Questions match: ${matches}/${legacyQuestions.length}\n`;
+            
+            if (matches !== legacyQuestions.length) {
+              // Questions don't match, rebuild sharded system
+              await setShardCount(env.STATE, 0);
+              await setTotalCount(env.STATE, 0);
+              await appendQuestionsSharded(env.STATE, legacyQuestions);
+              result += `✅ Rebuilt sharded system with legacy questions.\n`;
+            }
+          } else {
+            // Different counts, use legacy as source of truth
+            await setShardCount(env.STATE, 0);
+            await setTotalCount(env.STATE, 0);
+            await appendQuestionsSharded(env.STATE, legacyQuestions);
+            result += `✅ Rebuilt sharded system with ${legacyQuestions.length} legacy questions.\n`;
+          }
+        } else if (legacyQuestions.length === 0 && shardedQuestions.length > 0) {
+          // Only sharded questions exist, this is fine
+          result += `✅ Using existing sharded system with ${shardedQuestions.length} questions.\n`;
+        } else {
+          // No questions in either system
+          result += `⚠️ No questions found in either system.\n`;
+        }
+        
+        const finalTotal = await getTotalCount(env.STATE);
+        result += `\nFinal total questions: ${finalTotal}`;
+        
+        return new Response(result);
+      } else if (url.pathname === '/test-question' && request.method === 'GET') {
+        // Test endpoint to verify question consistency
+        const currentIndex = await getJSON<number>(env.STATE, `idx:${env.TARGET_GROUP_ID}`, 0);
+        const question = await readQuestionByGlobalIndex(env.STATE, currentIndex);
+        
+        if (question) {
+          const testResult = `🧪 Test Question at Index ${currentIndex}:\n\n`;
+          testResult += `Question: ${question.question}\n`;
+          testResult += `Options:\n`;
+          testResult += `A) ${question.options.A}\n`;
+          testResult += `B) ${question.options.B}\n`;
+          testResult += `C) ${question.options.C}\n`;
+          testResult += `D) ${question.options.D}\n`;
+          testResult += `\nCorrect Answer: ${question.answer}\n`;
+          testResult += `Explanation: ${question.explanation}\n`;
+          
+          return new Response(testResult);
+        } else {
+          return new Response(`❌ No question found at index ${currentIndex}`);
         }
       }
       
