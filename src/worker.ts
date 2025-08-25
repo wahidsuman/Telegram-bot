@@ -1723,6 +1723,244 @@ export default {
         } else {
           return new Response(`❌ No question found at index ${currentIndex}`);
         }
+      } else if (url.pathname === '/fix-shuffle-corruption' && request.method === 'GET') {
+        // Fix the shuffle corruption by restoring proper question-answer relationships
+        const legacyQuestions = await getJSON<Question[]>(env.STATE, 'questions', []);
+        const shardedQuestions = await getAllQuestionsSharded(env.STATE);
+        
+        let result = `🔧 Fixing Shuffle Corruption:\n\n`;
+        result += `Legacy questions: ${legacyQuestions.length}\n`;
+        result += `Sharded questions: ${shardedQuestions.length}\n\n`;
+        
+        // Check for obvious corruption signs
+        let corruptedCount = 0;
+        let fixedQuestions: Question[] = [];
+        
+        if (legacyQuestions.length > 0) {
+          // Analyze legacy questions for corruption
+          for (let i = 0; i < legacyQuestions.length; i++) {
+            const q = legacyQuestions[i];
+            
+            // Check if answer matches any of the options
+            const options = [q.options.A, q.options.B, q.options.C, q.options.D];
+            const answerExists = options.includes(q.answer);
+            
+            // Check if explanation seems related to the question
+            const questionWords = q.question.toLowerCase().split(/\s+/);
+            const explanationWords = q.explanation.toLowerCase().split(/\s+/);
+            const commonWords = questionWords.filter(word => explanationWords.includes(word));
+            const relevanceScore = commonWords.length / Math.max(questionWords.length, explanationWords.length);
+            
+            if (!answerExists || relevanceScore < 0.1) {
+              corruptedCount++;
+              result += `❌ Question ${i + 1} appears corrupted:\n`;
+              result += `   Question: ${q.question.substring(0, 50)}...\n`;
+              result += `   Answer: ${q.answer} (exists in options: ${answerExists})\n`;
+              result += `   Relevance: ${(relevanceScore * 100).toFixed(1)}%\n\n`;
+            }
+          }
+          
+          if (corruptedCount > 0) {
+            result += `⚠️ Found ${corruptedCount} potentially corrupted questions.\n`;
+            result += `This suggests the shuffle corruption affected your database.\n\n`;
+            result += `To fix this, you'll need to:\n`;
+            result += `1. Export your current questions\n`;
+            result += `2. Manually fix the question-answer relationships\n`;
+            result += `3. Re-import the corrected questions\n\n`;
+            result += `Or use the /restore-backup endpoint if you have a backup.\n`;
+          } else {
+            result += `✅ No obvious corruption detected in legacy questions.\n`;
+          }
+        }
+        
+        return new Response(result);
+      } else if (url.pathname === '/export-questions' && request.method === 'GET') {
+        // Export all questions for manual review and fixing
+        const legacyQuestions = await getJSON<Question[]>(env.STATE, 'questions', []);
+        const shardedQuestions = await getAllQuestionsSharded(env.STATE);
+        
+        // Use sharded questions if available, otherwise legacy
+        const questionsToExport = shardedQuestions.length > 0 ? shardedQuestions : legacyQuestions;
+        
+        if (questionsToExport.length === 0) {
+          return new Response('No questions to export.');
+        }
+        
+        // Create a formatted export
+        let exportData = `# MCQ Questions Export\n`;
+        exportData += `# Generated on: ${new Date().toISOString()}\n`;
+        exportData += `# Total Questions: ${questionsToExport.length}\n\n`;
+        
+        for (let i = 0; i < questionsToExport.length; i++) {
+          const q = questionsToExport[i];
+          exportData += `## Question ${i + 1}\n`;
+          exportData += `Question: ${q.question}\n`;
+          exportData += `A: ${q.options.A}\n`;
+          exportData += `B: ${q.options.B}\n`;
+          exportData += `C: ${q.options.C}\n`;
+          exportData += `D: ${q.options.D}\n`;
+          exportData += `Answer: ${q.answer}\n`;
+          exportData += `Explanation: ${q.explanation}\n\n`;
+        }
+        
+        return new Response(exportData, {
+          headers: {
+            'Content-Type': 'text/plain',
+            'Content-Disposition': 'attachment; filename="mcq-questions-export.txt"'
+          }
+        });
+      } else if (url.pathname === '/import-fixed-questions' && request.method === 'POST') {
+        // Import fixed questions to replace corrupted ones
+        try {
+          const fixedQuestionsText = await request.text();
+          const questions: Question[] = [];
+          
+          // Parse the fixed questions (assuming they're in the export format)
+          const lines = fixedQuestionsText.split('\n');
+          let currentQuestion: any = null;
+          
+          for (const line of lines) {
+            if (line.startsWith('Question: ')) {
+              if (currentQuestion) {
+                if (validateQuestion(currentQuestion)) {
+                  questions.push(trimQuestion(currentQuestion));
+                }
+              }
+              currentQuestion = {
+                question: line.substring(9).trim(),
+                options: { A: '', B: '', C: '', D: '' },
+                answer: '',
+                explanation: ''
+              };
+            } else if (line.startsWith('A: ')) {
+              currentQuestion.options.A = line.substring(2).trim();
+            } else if (line.startsWith('B: ')) {
+              currentQuestion.options.B = line.substring(2).trim();
+            } else if (line.startsWith('C: ')) {
+              currentQuestion.options.C = line.substring(2).trim();
+            } else if (line.startsWith('D: ')) {
+              currentQuestion.options.D = line.substring(2).trim();
+            } else if (line.startsWith('Answer: ')) {
+              currentQuestion.answer = line.substring(7).trim();
+            } else if (line.startsWith('Explanation: ')) {
+              currentQuestion.explanation = line.substring(12).trim();
+            }
+          }
+          
+          // Add the last question
+          if (currentQuestion && validateQuestion(currentQuestion)) {
+            questions.push(trimQuestion(currentQuestion));
+          }
+          
+          if (questions.length === 0) {
+            return new Response('No valid questions found in import data.');
+          }
+          
+          // Replace the entire database with fixed questions
+          await setShardCount(env.STATE, 0);
+          await setTotalCount(env.STATE, 0);
+          await appendQuestionsSharded(env.STATE, questions);
+          
+          // Also update legacy system for compatibility
+          await putJSON(env.STATE, 'questions', questions);
+          
+                  return new Response(`✅ Successfully imported ${questions.length} fixed questions.`);
+        
+        } catch (error) {
+          return new Response(`❌ Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      } else if (url.pathname === '/auto-fix-corruption' && request.method === 'GET') {
+        // Attempt to automatically fix obvious corruption patterns
+        const legacyQuestions = await getJSON<Question[]>(env.STATE, 'questions', []);
+        
+        if (legacyQuestions.length === 0) {
+          return new Response('No questions to fix.');
+        }
+        
+        let result = `🔧 Auto-Fixing Corruption:\n\n`;
+        let fixedCount = 0;
+        let totalFixed = 0;
+        
+        // Create a corrected version of questions
+        const correctedQuestions: Question[] = [];
+        
+        for (let i = 0; i < legacyQuestions.length; i++) {
+          const q = legacyQuestions[i];
+          let corrected = { ...q };
+          let needsFix = false;
+          
+          // Check if answer exists in options
+          const options = [q.options.A, q.options.B, q.options.C, q.options.D];
+          if (!options.includes(q.answer)) {
+            // Try to find the correct answer by looking at other questions
+            for (let j = 0; j < legacyQuestions.length; j++) {
+              if (i !== j) {
+                const otherQ = legacyQuestions[j];
+                const otherOptions = [otherQ.options.A, otherQ.options.B, otherQ.options.C, otherQ.options.D];
+                if (otherOptions.includes(q.answer)) {
+                  // Found the answer in another question, swap answers
+                  corrected.answer = otherQ.answer;
+                  otherQ.answer = q.answer;
+                  needsFix = true;
+                  fixedCount++;
+                  break;
+                }
+              }
+            }
+          }
+          
+          // Check if explanation seems unrelated to question
+          const questionWords = q.question.toLowerCase().split(/\s+/);
+          const explanationWords = q.explanation.toLowerCase().split(/\s+/);
+          const commonWords = questionWords.filter(word => explanationWords.includes(word));
+          const relevanceScore = commonWords.length / Math.max(questionWords.length, explanationWords.length);
+          
+          if (relevanceScore < 0.05) {
+            // Try to find a more relevant explanation
+            for (let j = 0; j < legacyQuestions.length; j++) {
+              if (i !== j) {
+                const otherQ = legacyQuestions[j];
+                const otherQuestionWords = otherQ.question.toLowerCase().split(/\s+/);
+                const otherExplanationWords = otherQ.explanation.toLowerCase().split(/\s+/);
+                const otherCommonWords = otherQuestionWords.filter(word => otherExplanationWords.includes(word));
+                const otherRelevanceScore = otherCommonWords.length / Math.max(otherQuestionWords.length, otherExplanationWords.length);
+                
+                if (otherRelevanceScore > 0.1) {
+                  // This explanation seems more relevant to the current question
+                  const tempExplanation = corrected.explanation;
+                  corrected.explanation = otherQ.explanation;
+                  otherQ.explanation = tempExplanation;
+                  needsFix = true;
+                  fixedCount++;
+                  break;
+                }
+              }
+            }
+          }
+          
+          correctedQuestions.push(corrected);
+          if (needsFix) {
+            totalFixed++;
+          }
+        }
+        
+        if (totalFixed > 0) {
+          // Apply the fixes
+          await setShardCount(env.STATE, 0);
+          await setTotalCount(env.STATE, 0);
+          await appendQuestionsSharded(env.STATE, correctedQuestions);
+          await putJSON(env.STATE, 'questions', correctedQuestions);
+          
+          result += `✅ Auto-fixed ${totalFixed} questions with ${fixedCount} corrections.\n`;
+          result += `The database has been updated with corrected question-answer relationships.\n`;
+        } else {
+          result += `ℹ️ No obvious corruption patterns detected for auto-fixing.\n`;
+          result += `You may need to manually review and fix the questions.\n`;
+        }
+        
+        result += `\nUse /export-questions to download the current questions for manual review.`;
+        
+        return new Response(result);
       }
       
       return new Response('Not Found', { status: 404 });
