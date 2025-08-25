@@ -918,6 +918,27 @@ export default {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel', { reply_markup: keyboard });
             } else if (message.text === '/whoami') {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `You are: id=${message.from?.id}, username=@${message.from?.username || ''}`);
+            } else if (message.text === '/fixbot' && isAdmin) {
+              // Admin command to fix everything
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '🔧 Starting complete bot fix... This may take a moment.');
+              
+              try {
+                // Call the fix-everything endpoint internally
+                const fixResult = await fetch(`${new URL(request.url).origin}/fix-everything`);
+                const resultText = await fixResult.text();
+                
+                // Send the result in chunks if it's too long
+                if (resultText.length > 4000) {
+                  const chunks = resultText.match(/.{1,4000}/g) || [];
+                  for (let i = 0; i < chunks.length; i++) {
+                    await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `Fix Result (Part ${i + 1}/${chunks.length}):\n\n${chunks[i]}`);
+                  }
+                } else {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Fix Complete!\n\n${resultText}`);
+                }
+              } catch (error) {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Fix failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              }
             } else if (message.text === '/addbutton') {
               const parts = message.text.split(' ');
               if (parts.length >= 4) {
