@@ -213,15 +213,13 @@ async function downloadFile(token: string, filePath: string): Promise<string> {
 }
 
 async function ensureKeys(kv: KVNamespace): Promise<void> {
-  const questions = await getJSON<Question[]>(kv, 'questions', []);
-  if (questions.length === 0) {
-    await putJSON(kv, 'questions', []);
-  }
+  // Ensure sharded system is initialized
+  await ensureShardedInitialized(kv);
 }
 
 async function initializeBotIfNeeded(kv: KVNamespace, token: string, targetGroupId: string, extraChannelId?: string, discussionGroupId?: string): Promise<void> {
-  const questions = await getJSON<Question[]>(kv, 'questions', []);
-  if (questions.length === 0) {
+  const total = await getTotalCount(kv);
+  if (total === 0) {
     // Add sample question to bootstrap the system
     const sampleQuestion: Question = {
       question: "Welcome to Prepladder MCQ Bot! Which programming paradigm focuses on functions as first-class citizens?",
@@ -235,7 +233,7 @@ async function initializeBotIfNeeded(kv: KVNamespace, token: string, targetGroup
       explanation: "Functional programming treats functions as first-class citizens, allowing them to be assigned to variables, passed as arguments, and returned from other functions."
     };
     
-    await putJSON(kv, 'questions', [sampleQuestion]);
+    await appendQuestionsSharded(kv, [sampleQuestion]);
   }
   
   // Check if we need to initialize the index
@@ -299,9 +297,9 @@ async function incrementStatsFirstAttemptOnly(kv: KVNamespace, userId: number, q
 }
 
 async function postNext(kv: KVNamespace, token: string, chatId: string): Promise<void> {
-  const questions = await getJSON<Question[]>(kv, 'questions', []);
+  const total = await getTotalCount(kv);
   
-  if (questions.length === 0) {
+  if (total === 0) {
     console.log('No questions available');
     return;
   }
@@ -309,8 +307,14 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
   const indexKey = `idx:${chatId}`;
   const currentIndex = await getJSON<number>(kv, indexKey, 0);
   
-  const question = questions[currentIndex];
-  const nextIndex = (currentIndex + 1) % questions.length;
+  // Use sharded system to get the question
+  const question = await readQuestionByGlobalIndex(kv, currentIndex);
+  if (!question) {
+    console.log(`Question not found at index ${currentIndex}`);
+    return;
+  }
+  
+  const nextIndex = (currentIndex + 1) % total;
   
   await putJSON(kv, indexKey, nextIndex);
   
@@ -599,11 +603,12 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
     throw new Error('No valid questions found');
   }
   
-  const existingQuestions = await getJSON<Question[]>(kv, 'questions', []);
-  // Build key set for duplicates (normalize by question + options + answer)
+  // Check for duplicates using sharded system
+  const allQuestions = await getAllQuestionsSharded(kv);
   const buildKey = (q: Question) =>
     `${q.question}\u0001${q.options.A}\u0001${q.options.B}\u0001${q.options.C}\u0001${q.options.D}\u0001${q.answer}`.toLowerCase();
-  const seen = new Set<string>(existingQuestions.map(buildKey));
+  const seen = new Set<string>(allQuestions.map(buildKey));
+  
   // Deduplicate within new batch
   const batchSeen = new Set<string>();
   const uniqueNew: Question[] = [];
@@ -613,8 +618,12 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
     batchSeen.add(k);
     uniqueNew.push(q);
   }
-  const allQuestions = [...existingQuestions, ...uniqueNew];
-  await putJSON(kv, 'questions', allQuestions);
+  
+  // Add unique questions to sharded system
+  if (uniqueNew.length > 0) {
+    await appendQuestionsSharded(kv, uniqueNew);
+  }
+  
   const skippedThisTime = Math.max(0, validQuestions.length - uniqueNew.length);
   const dupTotalKey = 'stats:duplicates_skipped_total';
   const prevDupTotal = await getJSON<number>(kv, dupTotalKey, 0 as unknown as number);
@@ -624,12 +633,13 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
   // Get current index to calculate sent vs unsent
   const indexKey = `idx:${targetGroupId}`;
   const currentIndex = await getJSON<number>(kv, indexKey, 0);
+  const total = await getTotalCount(kv);
   
   return {
     uploaded: uniqueNew.length,
-    total: allQuestions.length,
+    total: total,
     sent: currentIndex,
-    unsent: Math.max(0, allQuestions.length - currentIndex),
+    unsent: Math.max(0, total - currentIndex),
     skippedThisTime,
     skippedTotal
   };
@@ -782,6 +792,18 @@ async function ensureShardedInitialized(kv: KVNamespace): Promise<void> {
   }
 }
 
+async function getAllQuestionsSharded(kv: KVNamespace): Promise<Question[]> {
+  const shards = await getShardCount(kv);
+  const allQuestions: Question[] = [];
+  
+  for (let i = 0; i < shards; i++) {
+    const shard = await readShard(kv, i);
+    allQuestions.push(...shard);
+  }
+  
+  return allQuestions;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -930,11 +952,12 @@ export default {
               const multipleQuestions = parseMultipleQuestions(message.text);
               
               if (multipleQuestions.length > 0) {
-                // Process multiple questions
-                const list = await getJSON<Question[]>(env.STATE, 'questions', []);
-                const seen = new Set(list.map(buildQuestionKey));
+                // Process multiple questions using sharded system
+                const allQuestions = await getAllQuestionsSharded(env.STATE);
+                const seen = new Set(allQuestions.map(buildQuestionKey));
                 let added = 0;
                 let skipped = 0;
+                const newQuestions: Question[] = [];
                 
                 for (const parsed of multipleQuestions) {
                   if (parsed.answer) {
@@ -942,18 +965,19 @@ export default {
                     if (seen.has(buildQuestionKey(candidate))) {
                       skipped++;
                     } else {
-                      list.push(candidate);
+                      newQuestions.push(candidate);
                       added++;
                     }
                   }
                 }
                 
                 if (added > 0) {
-                  await putJSON(env.STATE, 'questions', list);
+                  await appendQuestionsSharded(env.STATE, newQuestions);
                 }
                 
+                const total = await getTotalCount(env.STATE);
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
-                  `✅ Multiple questions processed!\n\n• Added: ${added} questions\n• Skipped duplicates: ${skipped} questions\n• Total in database: ${list.length} questions`);
+                  `✅ Multiple questions processed!\n\n• Added: ${added} questions\n• Skipped duplicates: ${skipped} questions\n• Total in database: ${total} questions`);
               } else {
                 // Try single question parsing
                 const parsed = parseAdminTemplate(message.text);
@@ -970,12 +994,15 @@ export default {
                     await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Select the correct answer for the submitted question:', { reply_markup: kb });
                   } else {
                     const candidate: Question = trimQuestion(parsed as Question);
-                    const list = await getJSON<Question[]>(env.STATE, 'questions', []);
-                    const seen = new Set(list.map(buildQuestionKey));
+                    
+                    // Check for duplicates using sharded system
+                    const allQuestions = await getAllQuestionsSharded(env.STATE);
+                    const seen = new Set(allQuestions.map(buildQuestionKey));
                     if (seen.has(buildQuestionKey(candidate))) {
                       await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '⚠️ Duplicate detected. Skipped adding to database.');
                     } else {
-                      await putJSON(env.STATE, 'questions', [...list, candidate]);
+                      // Add to sharded system
+                      await appendQuestionsSharded(env.STATE, [candidate]);
                       await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ Question added to database.');
                     }
                   }
@@ -1348,11 +1375,10 @@ export default {
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Posted next MCQ to all targets');
           } else if (data === 'admin:dbstatus') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
-            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const total = await getTotalCount(env.STATE);
             const indexKey = `idx:${env.TARGET_GROUP_ID}`;
             const currentIndex = await getJSON<number>(env.STATE, indexKey, 0);
             const sent = currentIndex;
-            const total = questions.length;
             const unsent = Math.max(0, total - sent);
             const extraIdx = env.TARGET_CHANNEL_ID ? await getJSON<number>(env.STATE, `idx:${env.TARGET_CHANNEL_ID}`, 0) : undefined;
             const msg = `🗄️ DB Status\n\n• Total questions: ${total}\n• Sent (Group): ${sent}\n${env.TARGET_CHANNEL_ID ? `• Sent (Channel): ${extraIdx}\n` : ''}• Unsent: ${unsent}`;
@@ -1378,21 +1404,29 @@ export default {
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❎ Broadcast cancelled');
           } else if (data === 'admin:manage') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
-            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const total = await getTotalCount(env.STATE);
             const indexKey = `idx:${env.TARGET_GROUP_ID}`;
             const currentIndex = await getJSON<number>(env.STATE, indexKey, 0);
-            const upcoming = questions.slice(currentIndex);
-            if (upcoming.length === 0) {
+            
+            if (total === 0) {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions in database.');
             } else {
+              // Get the first upcoming question
+              const firstUpcomingIndex = currentIndex % total;
+              const question = await readQuestionByGlobalIndex(env.STATE, firstUpcomingIndex);
+              if (!question) {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Error retrieving question.');
+                return;
+              }
+              
               await env.STATE.put('admin:manage:index', '0');
-              const txt = formatQuestionPreview(upcoming[0], currentIndex + 0);
+              const txt = formatQuestionPreview(question, firstUpcomingIndex);
               const kb = { inline_keyboard: [[
                 { text: '⬅️ Prev', callback_data: 'admin:mg:prev' },
                 { text: '➡️ Next', callback_data: 'admin:mg:next' }
               ], [
-                { text: '📝 Edit', callback_data: 'admin:edit:0' },
-                { text: '🗑️ Delete', callback_data: 'admin:del:0' }
+                { text: '📝 Edit', callback_data: `admin:edit:${firstUpcomingIndex}` },
+                { text: '🗑️ Delete', callback_data: `admin:del:${firstUpcomingIndex}` }
               ], [
                 { text: '✖️ Close', callback_data: 'admin:mg:close' }
               ]] };
@@ -1403,25 +1437,32 @@ export default {
             await env.STATE.delete('admin:manage:index');
           } else if (data === 'admin:mg:prev' || data === 'admin:mg:next') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
-            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const total = await getTotalCount(env.STATE);
             const indexKey = `idx:${env.TARGET_GROUP_ID}`;
             const currentIndex = await getJSON<number>(env.STATE, indexKey, 0);
-            const upcoming = questions.slice(currentIndex);
-            if (upcoming.length === 0) {
+            
+            if (total === 0) {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions in database.');
             } else {
               const idxStr = (await env.STATE.get('admin:manage:index')) || '0';
               let idx = parseInt(idxStr, 10) || 0;
-              if (data === 'admin:mg:next') idx = (idx + 1) % upcoming.length;
-              if (data === 'admin:mg:prev') idx = (idx - 1 + upcoming.length) % upcoming.length;
+              if (data === 'admin:mg:next') idx = (idx + 1) % total;
+              if (data === 'admin:mg:prev') idx = (idx - 1 + total) % total;
               await env.STATE.put('admin:manage:index', String(idx));
-              const txt = formatQuestionPreview(upcoming[idx], currentIndex + idx);
+              
+              const question = await readQuestionByGlobalIndex(env.STATE, idx);
+              if (!question) {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Error retrieving question.');
+                return;
+              }
+              
+              const txt = formatQuestionPreview(question, idx);
               const kb = { inline_keyboard: [[
                 { text: '⬅️ Prev', callback_data: 'admin:mg:prev' },
                 { text: '➡️ Next', callback_data: 'admin:mg:next' }
               ], [
-                { text: '📝 Edit', callback_data: `admin:edit:${currentIndex + idx}` },
-                { text: '🗑️ Delete', callback_data: `admin:del:${currentIndex + idx}` }
+                { text: '📝 Edit', callback_data: `admin:edit:${idx}` },
+                { text: '🗑️ Delete', callback_data: `admin:del:${idx}` }
               ], [
                 { text: '✖️ Close', callback_data: 'admin:mg:close' }
               ]] };
@@ -1436,12 +1477,15 @@ export default {
             } else {
               const base = JSON.parse(raw);
               const candidate: Question = trimQuestion({ ...base, answer: ans });
-              const list = await getJSON<Question[]>(env.STATE, 'questions', []);
-              const seen = new Set(list.map(buildQuestionKey));
+              
+              // Check for duplicates using sharded system
+              const allQuestions = await getAllQuestionsSharded(env.STATE);
+              const seen = new Set(allQuestions.map(buildQuestionKey));
               if (seen.has(buildQuestionKey(candidate))) {
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '⚠️ Duplicate detected. Skipped adding to database.');
               } else {
-                await putJSON(env.STATE, 'questions', [...list, candidate]);
+                // Add to sharded system
+                await appendQuestionsSharded(env.STATE, [candidate]);
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Question added to database.');
               }
               await env.STATE.delete('admin:pending:q');
@@ -1460,7 +1504,7 @@ export default {
             }
           } else if (data === 'admin:listAll') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
-            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const questions = await getAllQuestionsSharded(env.STATE);
             if (questions.length === 0) {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions in database.');
             } else {
@@ -1482,10 +1526,9 @@ export default {
             const parts = data.split(':');
             const idx = parseInt(parts[2], 10);
             await env.STATE.put('admin:edit:idx', String(idx));
-            const list = await getJSON<Question[]>(env.STATE, 'questions', []);
-            if (idx >= 0 && idx < list.length) {
-              const current = list[idx];
-              const example = JSON.stringify(current, null, 2);
+            const question = await readQuestionByGlobalIndex(env.STATE, idx);
+            if (question) {
+              const example = JSON.stringify(question, null, 2);
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `Send updated question as JSON for #${idx + 1} like:\n\n<pre>${esc(example)}</pre>`);
             } else {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Invalid index');
