@@ -1782,21 +1782,22 @@ export default {
             
           } else if (data === 'admin:upload') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
-              '📤 **Upload Questions**\n\n' +
-              '**Option 1: Text Format**\n' +
-              'Send questions in this format:\n\n' +
-              'Question=Your question here\n' +
-              'A=Option A\n' +
-              'B=Option B\n' +
-              'C=Option C\n' +
-              'D=Option D\n' +
-              'Answer=A\n' +
-              'Explanation=Your explanation\n\n' +
-              '**Option 2: JSON File**\n' +
-              'Send a JSON file with questions array or JSONL format.\n\n' +
-              '**Option 3: CSV File**\n' +
-              'Send a CSV file with columns: question, A, B, C, D, answer, explanation');
+                          await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+                '📤 **Upload Questions**\n\n' +
+                '**Option 1: Text Format**\n' +
+                'Send questions in this format:\n\n' +
+                'Question=Your question here\n' +
+                'A=Option A\n' +
+                'B=Option B\n' +
+                'C=Option C\n' +
+                'D=Option D\n' +
+                'Answer=A\n' +
+                'Explanation=Your explanation\n\n' +
+                '**Option 2: JSON File**\n' +
+                'Send a JSON file with questions array or JSONL format.\n\n' +
+                '**Option 3: CSV File**\n' +
+                'Send a CSV file with columns: question, A, B, C, D, answer, explanation\n\n' +
+                '🔄 **Auto-deployment active!**');
               
           } else if (data === 'admin:daily') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
