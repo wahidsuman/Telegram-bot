@@ -632,7 +632,6 @@ function isSimilarQuestion(q1: Question, q2: Question): boolean {
 
 function parseAdminTemplate(text: string): { question: string; options: { A: string; B: string; C: string; D: string }; explanation: string; answer?: 'A' | 'B' | 'C' | 'D' } | null {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  console.log('Parsing lines:', lines);
   const data: Record<string, string> = {};
   
   // Handle both formats:
@@ -705,21 +704,12 @@ function parseMultipleQuestions(text: string): Array<{ question: string; options
   
   // Split by "Question=" to separate multiple questions
   const questionBlocks = text.split(/(?=Question=)/).filter(block => block.trim());
-  console.log('Question blocks found:', questionBlocks.length);
   
   for (let i = 0; i < questionBlocks.length; i++) {
     const block = questionBlocks[i];
-    console.log(`Parsing block ${i + 1}:`, block.substring(0, 100));
     const parsed = parseAdminTemplate(block);
     if (parsed) {
-      console.log(`Block ${i + 1} parsed successfully:`, {
-        question: parsed.question.substring(0, 50),
-        answer: parsed.answer,
-        options: parsed.options
-      });
       questions.push(parsed);
-    } else {
-      console.log(`Block ${i + 1} failed to parse`);
     }
   }
   
@@ -1311,9 +1301,7 @@ export default {
               await env.STATE.delete('admin:edit:idx');
               
               // Admin free-text template upload - try multiple questions first
-              console.log('Processing admin text upload:', message.text.substring(0, 200));
               const multipleQuestions = parseMultipleQuestions(message.text);
-              console.log('Parsed multiple questions:', multipleQuestions.length);
               
               if (multipleQuestions.length > 0) {
                 // Process multiple questions
@@ -1335,19 +1323,6 @@ export default {
                 }
                 
                 if (added > 0) {
-                  // Verify data integrity before saving
-                  console.log('Verifying data integrity before saving...');
-                  for (let i = 0; i < list.length; i++) {
-                    const q = list[i];
-                    console.log(`Question ${i + 1} verification:`, {
-                      question: q.question.substring(0, 50),
-                      answer: q.answer,
-                      optionA: q.options.A.substring(0, 30),
-                      optionB: q.options.B.substring(0, 30),
-                      optionC: q.options.C.substring(0, 30),
-                      optionD: q.options.D.substring(0, 30)
-                    });
-                  }
                   await putJSON(env.STATE, 'questions', list);
                 }
                 
@@ -1796,8 +1771,7 @@ export default {
                 '**Option 2: JSON File**\n' +
                 'Send a JSON file with questions array or JSONL format.\n\n' +
                 '**Option 3: CSV File**\n' +
-                'Send a CSV file with columns: question, A, B, C, D, answer, explanation\n\n' +
-                '🔄 **Auto-deployment active!**');
+                'Send a CSV file with columns: question, A, B, C, D, answer, explanation');
               
           } else if (data === 'admin:daily') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
