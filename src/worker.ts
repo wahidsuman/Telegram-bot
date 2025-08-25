@@ -861,7 +861,9 @@ export default {
                   [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
                   [{ text: '📣 Broadcast to Group', callback_data: 'admin:broadcast' }],
                   [{ text: '🛠️ Manage Questions (Upcoming)', callback_data: 'admin:manage' }],
-                  [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }]
+                  [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
+                  [{ text: '🔀 Shuffle Questions', callback_data: 'admin:shuffle' }],
+                  [{ text: '🗑️ Delete All Questions', callback_data: 'admin:deleteAll' }]
                 ]
               };
               
@@ -1457,6 +1459,65 @@ export default {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `🗑️ Deleted question #${idx + 1}. Remaining: ${list.length}`);
             } else {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Invalid index');
+            }
+          } else if (data === 'admin:deleteAll') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const kb = { inline_keyboard: [[
+              { text: '🔴 YES, DELETE ALL', callback_data: 'admin:deleteAllConfirm' },
+              { text: '✖️ Cancel', callback_data: 'admin:deleteAllCancel' }
+            ]] };
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '⚠️ Are you sure you want to delete ALL questions? This cannot be undone.', { reply_markup: kb });
+          } else if (data === 'admin:deleteAllConfirm') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Deleting all questions...');
+
+            await env.STATE.delete('questions');
+
+            // Also delete sharded questions if they exist
+            const shardCount = await getShardCount(env.STATE);
+            if (shardCount > 0) {
+              for (let i = 0; i < shardCount; i++) {
+                await env.STATE.delete(`q:${i}`);
+              }
+            }
+            await env.STATE.delete('q:shards');
+            await env.STATE.delete('q:count');
+
+
+            // Reset indices
+            await putJSON(env.STATE, `idx:${env.TARGET_GROUP_ID}`, 0);
+            if (env.TARGET_CHANNEL_ID) {
+              await putJSON(env.STATE, `idx:${env.TARGET_CHANNEL_ID}`, 0);
+            }
+            if (env.TARGET_DISCUSSION_GROUP_ID) {
+              await putJSON(env.STATE, `idx:${env.TARGET_DISCUSSION_GROUP_ID}`, 0);
+            }
+
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ All questions have been deleted.');
+          } else if (data === 'admin:deleteAllCancel') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Deletion cancelled.');
+          } else if (data === 'admin:shuffle') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Shuffling questions...');
+            const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+            if (list.length > 0) {
+              // Fisher-Yates shuffle
+              for (let i = list.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [list[i], list[j]] = [list[j], list[i]];
+              }
+              await putJSON(env.STATE, 'questions', list);
+
+              // Reset indices
+              await putJSON(env.STATE, `idx:${env.TARGET_GROUP_ID}`, 0);
+              if (env.TARGET_CHANNEL_ID) {
+                await putJSON(env.STATE, `idx:${env.TARGET_CHANNEL_ID}`, 0);
+              }
+              if (env.TARGET_DISCUSSION_GROUP_ID) {
+                await putJSON(env.STATE, `idx:${env.TARGET_DISCUSSION_GROUP_ID}`, 0);
+              }
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `✅ Shuffled ${list.length} questions and reset all indices.`);
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions to shuffle.');
             }
           } else if (data === 'admin:listAll') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
