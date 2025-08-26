@@ -1870,7 +1870,33 @@ export default {
                 );
               }
             } else if (data === 'admin:deleteAllData') {
-              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '⚠️ COMPLETELY WIPING ALL DATA...');
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '⚠️ Delete All Data Confirmation');
+              
+              // Show confirmation message with keyboard
+              const keyboard = {
+                inline_keyboard: [
+                  [
+                    { text: '✅ YES, DELETE EVERYTHING', callback_data: 'admin:confirmDeleteAll' },
+                    { text: '❌ NO, CANCEL', callback_data: 'admin:cancelDeleteAll' }
+                  ]
+                ]
+              };
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+                `⚠️ **DELETE ALL DATA CONFIRMATION**\n\n` +
+                `🚨 **This will PERMANENTLY DELETE:**\n` +
+                `• All questions in database\n` +
+                `• All user statistics\n` +
+                `• All daily/monthly reports\n` +
+                `• All backups\n` +
+                `• All admin states\n` +
+                `• All posting indexes\n\n` +
+                `💥 **This action CANNOT be undone!**\n\n` +
+                `Are you absolutely sure you want to delete everything?`,
+                { reply_markup: keyboard }
+              );
+            } else if (data === 'admin:confirmDeleteAll') {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '🗑️ DELETING ALL DATA...');
               
               // Get all keys first
               const keys = await env.STATE.list();
@@ -1921,6 +1947,9 @@ export default {
                 `• ✅ Fresh start guaranteed\n\n` +
                 `📤 **Next step:** Upload your fresh questions!`
               );
+            } else if (data === 'admin:cancelDeleteAll') {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Delete cancelled');
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ **Delete All Data cancelled.**\n\nYour data is safe! 🛡️');
             } else if (data === 'admin:checkDataIntegrity') {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '🔍 Checking data integrity...');
               
