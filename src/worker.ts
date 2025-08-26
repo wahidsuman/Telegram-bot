@@ -427,30 +427,7 @@ function trimQuestion(q: any): Question {
   };
 }
 
-function validateQuestion(q: any): boolean {
-  // Check if all required fields exist
-  if (!q.question || !q.options || !q.answer || !q.explanation) {
-    return false;
-  }
-  
-  // Check if answer is valid
-  if (!['A', 'B', 'C', 'D'].includes(q.answer)) {
-    return false;
-  }
-  
-  // Check if all options exist
-  if (!q.options.A || !q.options.B || !q.options.C || !q.options.D) {
-    return false;
-  }
-  
-  // Check if answer text matches the selected option
-  const answerText = q.options[q.answer];
-  if (!answerText || answerText.trim() === '') {
-    return false;
-  }
-  
-  return true;
-}
+
 
 function formatQuestionPreview(q: Question, index: number): string {
   return `#${index + 1}\n\n${esc(q.question)}\n\nA) ${esc(q.options.A)}\nB) ${esc(q.options.B)}\nC) ${esc(q.options.C)}\nD) ${esc(q.options.D)}\n\nAnswer: ${q.answer}`;
