@@ -1071,8 +1071,8 @@ export default {
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
-               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel - FINAL CLEAN', { reply_markup: keyboard });
-              return new Response('OK');
+                              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel - WITH POST NOW', { reply_markup: keyboard });
+               return new Response('OK');
             } else {
               // Show regular user buttons
               const keyboard = {
@@ -1240,7 +1240,7 @@ export default {
                 ]
               };
               
-                             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel - FINAL CLEAN', { reply_markup: keyboard });
+                             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel - WITH POST NOW', { reply_markup: keyboard });
             } else if (message.text === '/whoami') {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `You are: id=${message.from?.id}, username=@${message.from?.username || ''}\n\nAdmin Chat ID: ${env.ADMIN_CHAT_ID}\nIs Admin: ${isAdmin}\nChat ID: ${chatId}`);
             } else if (message.text === '/addbutton') {
