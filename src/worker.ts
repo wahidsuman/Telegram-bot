@@ -269,21 +269,20 @@ async function incrementStatsFirstAttemptOnly(kv: KVNamespace, userId: number, q
   const today = getCurrentDate(tz);
   const month = getCurrentMonth(tz);
 
-  // Track seen attempts per period per user
-  const seenDailyKey = `seen:daily:${today}:${userIdStr}`;
-  const seenMonthlyKey = `seen:monthly:${month}:${userIdStr}`;
-  const seenDaily = await getJSON<Record<string, boolean>>(kv, seenDailyKey, {});
-  const seenMonthly = await getJSON<Record<string, boolean>>(kv, seenMonthlyKey, {});
+  // Batch all KV reads for better performance
+  const [seenDaily, seenMonthly, dailyStats, monthlyStats] = await Promise.all([
+    getJSON<Record<string, boolean>>(kv, `seen:daily:${today}:${userIdStr}`, {}),
+    getJSON<Record<string, boolean>>(kv, `seen:monthly:${month}:${userIdStr}`, {}),
+    getJSON<DayStats>(kv, `stats:daily:${today}`, { total: 0, users: {} }),
+    getJSON<DayStats>(kv, `stats:monthly:${month}`, { total: 0, users: {} })
+  ]);
 
   // If already attempted this question for both periods, skip counting
   const alreadyDaily = !!seenDaily[qidStr];
   const alreadyMonthly = !!seenMonthly[qidStr];
 
-  // Load stats records
-  const dailyKey = `stats:daily:${today}`;
-  const monthlyKey = `stats:monthly:${month}`;
-  const dailyStats = await getJSON<DayStats>(kv, dailyKey, { total: 0, users: {} });
-  const monthlyStats = await getJSON<DayStats>(kv, monthlyKey, { total: 0, users: {} });
+  // Prepare all updates in parallel
+  const updates: Promise<void>[] = [];
 
   if (!alreadyDaily) {
     dailyStats.total += 1;
@@ -291,8 +290,8 @@ async function incrementStatsFirstAttemptOnly(kv: KVNamespace, userId: number, q
     dailyStats.users[userIdStr].cnt += 1;
     if (isCorrect) dailyStats.users[userIdStr].correct += 1;
     seenDaily[qidStr] = true;
-    await putJSON(kv, seenDailyKey, seenDaily);
-    await putJSON(kv, dailyKey, dailyStats);
+    updates.push(putJSON(kv, `seen:daily:${today}:${userIdStr}`, seenDaily));
+    updates.push(putJSON(kv, `stats:daily:${today}`, dailyStats));
   }
 
   if (!alreadyMonthly) {
@@ -301,8 +300,13 @@ async function incrementStatsFirstAttemptOnly(kv: KVNamespace, userId: number, q
     monthlyStats.users[userIdStr].cnt += 1;
     if (isCorrect) monthlyStats.users[userIdStr].correct += 1;
     seenMonthly[qidStr] = true;
-    await putJSON(kv, seenMonthlyKey, seenMonthly);
-    await putJSON(kv, monthlyKey, monthlyStats);
+    updates.push(putJSON(kv, `seen:monthly:${month}:${userIdStr}`, seenMonthly));
+    updates.push(putJSON(kv, `stats:monthly:${month}`, monthlyStats));
+  }
+
+  // Execute all updates in parallel
+  if (updates.length > 0) {
+    await Promise.all(updates);
   }
 }
 
@@ -1027,21 +1031,27 @@ export default {
         
         const update: TelegramUpdate = await request.json();
         
-        await ensureKeys(env.STATE);
-        await ensureShardedInitialized(env.STATE);
+        // Only initialize if needed - skip for simple commands
+        if (update.message?.text && (update.message.text === '/start' || update.message.text === '/admin')) {
+          // Skip initialization for simple commands
+        } else {
+          await ensureKeys(env.STATE);
+          await ensureShardedInitialized(env.STATE);
+        }
         
         if (update.message) {
           const message = update.message;
           const chatId = message.chat.id;
           const userId = message.from?.id;
           
-          console.log('Message received:', { text: message.text, chatId, userId });
-          console.log('Processing message, about to check /start');
+          // Fast path for common commands
           
           // Handle /start command first, before any other logic
           if (message.text === '/start' || message.text === '/admin') {
-            const isAdmin = chatId.toString() === env.ADMIN_CHAT_ID || (env.ADMIN_USERNAME && message.from?.username && (`@${message.from.username}`.toLowerCase() === `@${env.ADMIN_USERNAME}`.toLowerCase()));
-            console.log('Start command received:', { chatId, adminChatId: env.ADMIN_CHAT_ID, isAdmin, text: message.text });
+            // Fast admin check - avoid string operations when possible
+            const isAdmin = chatId.toString() === env.ADMIN_CHAT_ID || 
+              (env.ADMIN_USERNAME && message.from?.username && 
+               message.from.username.toLowerCase() === env.ADMIN_USERNAME.toLowerCase());
             
             if (isAdmin) {
               // Check if posts are stopped
@@ -1066,9 +1076,7 @@ export default {
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
-                             console.log('About to send admin panel - FINAL CLEAN VERSION');
                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel - FINAL CLEAN', { reply_markup: keyboard });
-              console.log('Admin panel sent, returning OK');
               return new Response('OK');
             } else {
               // Show regular user buttons
@@ -1081,22 +1089,24 @@ export default {
                   [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
                 ]
               };
-              console.log('About to send user buttons');
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
                 'Here for discount coupons? Click on "Get Code" button below and select Prepladder, Marrow, Cerebellum or any other discount coupons available in the market.You will get guaranteed discount,For any Help Click on "Contact Admin" button 🔘', 
                 { reply_markup: keyboard });
-              console.log('User buttons sent, returning OK');
               return new Response('OK');
             }
           }
 
-          const isAdmin = chatId.toString() === env.ADMIN_CHAT_ID || (env.ADMIN_USERNAME && message.from?.username && (`@${message.from.username}`.toLowerCase() === `@${env.ADMIN_USERNAME}`.toLowerCase()));
-          console.log('Admin check:', { chatId, adminChatId: env.ADMIN_CHAT_ID, username: message.from?.username, adminUsername: env.ADMIN_USERNAME, isAdmin });
+          // Fast admin check - reuse same logic
+          const isAdmin = chatId.toString() === env.ADMIN_CHAT_ID || 
+            (env.ADMIN_USERNAME && message.from?.username && 
+             message.from.username.toLowerCase() === env.ADMIN_USERNAME.toLowerCase());
           if (isAdmin) {
-            // Admin commands
-            const broadcastPending = await env.STATE.get('admin:broadcast:pending');
-            const editIdxStr = await env.STATE.get('admin:edit:idx');
-            const replyPendingUser = await env.STATE.get('admin:reply:pending');
+            // Admin commands - batch KV reads for better performance
+            const [broadcastPending, editIdxStr, replyPendingUser] = await Promise.all([
+              env.STATE.get('admin:broadcast:pending'),
+              env.STATE.get('admin:edit:idx'),
+              env.STATE.get('admin:reply:pending')
+            ]);
             if (replyPendingUser) {
               try {
                 await copyMessage(env.TELEGRAM_BOT_TOKEN, chatId, message.message_id, replyPendingUser);
@@ -1701,66 +1711,31 @@ export default {
                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `${header}\n${body}`, { reply_markup: kb });
              }
            } else if (data.startsWith('ans:')) {
-            // MCQ answer - Clean implementation with enhanced debugging
+            // MCQ answer - Optimized for speed
             const [, qidStr, answer] = data.split(':');
             const qid = parseInt(qidStr);
             
-            console.log(`=== ANSWER CALLBACK DEBUG ===`);
-            console.log(`Raw data: ${data}`);
-            console.log(`Parsed QID: ${qid}, Answer: ${answer}`);
-            
-            // Get questions directly from main array (no sharded reading for now)
+            // Get questions directly from main array
             const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
-            console.log(`Total questions in database: ${questions.length}`);
             
             if (qid >= 0 && qid < questions.length) {
               const question = questions[qid];
-              console.log(`Question at index ${qid}:`, {
-                question: question.question?.substring(0, 50) + '...',
-                answer: question.answer,
-                explanation: question.explanation?.substring(0, 50) + '...',
-                options: question.options
-              });
               
-              // Validate question data integrity
-              if (!question.question || !question.options || !question.answer || !question.explanation) {
-                console.log(`❌ Question data corrupted at index ${qid}`);
+              // Quick validation
+              if (!question?.question || !question?.options || !question?.answer || !question?.explanation) {
                 await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question data corrupted', true);
-                return new Response('OK');
-              }
-              
-              // Validate answer is A, B, C, or D
-              if (!['A', 'B', 'C', 'D'].includes(question.answer)) {
-                console.log(`❌ Invalid answer format: ${question.answer}`);
-                await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Invalid answer format', true);
-                return new Response('OK');
-              }
-              
-              // Validate options exist
-              if (!question.options.A || !question.options.B || !question.options.C || !question.options.D) {
-                console.log(`❌ Missing options for question ${qid}`);
-                await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Missing options', true);
                 return new Response('OK');
               }
               
               const isCorrect = answer === question.answer;
               
-              await incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata');
-              
-              // Create popup with full explanation (no truncation)
-              const verdict = isCorrect ? '✅ correct' : '❌ wrong';
-              const answerLine = `Answer: ${question.answer}`;
-              const popup = `${verdict}\n\n${answerLine}\n\nExplanation: ${question.explanation}`;
-              
-              console.log(`=== POPUP CONTENT ===`);
-              console.log(`Verdict: ${verdict}`);
-              console.log(`Answer Line: ${answerLine}`);
-              console.log(`Full Popup: ${popup}`);
-              console.log(`=== END DEBUG ===`);
-              
-              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popup, true);
+              // Update stats and show popup in parallel for better performance
+              await Promise.all([
+                incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata'),
+                answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 
+                  `${isCorrect ? '✅ correct' : '❌ wrong'}\n\nAnswer: ${question.answer}\n\nExplanation: ${question.explanation}`, true)
+              ]);
             } else {
-              console.log(`❌ Question not found: QID ${qid}, Total questions: ${questions.length}`);
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question not found', true);
             }
           } else if (data === 'coupon:copy') {
