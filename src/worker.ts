@@ -1065,6 +1065,7 @@ export default {
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
                   [{ text: stopButtonText, callback_data: 'admin:stopPosts' }],
                   [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
+                  [{ text: '🎯 Jump to Question', callback_data: 'admin:jumpToQuestion' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1230,6 +1231,7 @@ export default {
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
                   [{ text: stopButtonText, callback_data: 'admin:stopPosts' }],
                   [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
+                  [{ text: '🎯 Jump to Question', callback_data: 'admin:jumpToQuestion' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1298,6 +1300,66 @@ export default {
             } else if (message.text) {
               // Clear any pending edit states first
               await env.STATE.delete('admin:edit:idx');
+              
+              // Check if admin is trying to jump to a specific question
+              const jumpPending = await env.STATE.get('admin:jumpToQuestion:pending');
+              if (jumpPending === '1') {
+                await env.STATE.delete('admin:jumpToQuestion:pending');
+                
+                const questionNumber = parseInt(message.text.trim(), 10);
+                const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+                const totalQuestions = questions.length;
+                
+                if (isNaN(questionNumber) || questionNumber < 1 || questionNumber > totalQuestions) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                    `❌ **Invalid question number!**\n\n` +
+                    `📝 You entered: \`${message.text}\`\n` +
+                    `📊 Valid range: 1 to ${totalQuestions}\n\n` +
+                    `💡 **Try again:** Click "🎯 Jump to Question" and enter a valid number.`
+                  );
+                  return new Response('OK');
+                }
+                
+                // Convert to 0-based index
+                const questionIndex = questionNumber - 1;
+                const question = questions[questionIndex];
+                
+                // Set the check question index to this question
+                await env.STATE.put('admin:checkQuestion:index', String(questionIndex));
+                
+                const message = 
+                  `🎯 **JUMPED TO QUESTION ${questionNumber} of ${totalQuestions}**\n\n` +
+                  `📝 **Question:** ${question.question}\n\n` +
+                  `A) ${question.options.A}\n` +
+                  `B) ${question.options.B}\n` +
+                  `C) ${question.options.C}\n` +
+                  `D) ${question.options.D}\n\n` +
+                  `✅ **Answer:** ${question.answer}\n` +
+                  `📖 **Explanation:** ${question.explanation}\n\n` +
+                  `🔍 **Verification:** Does answer "${question.answer}" match the explanation?`;
+                
+                const keyboard = {
+                  inline_keyboard: [
+                    [
+                      { text: '⬅️ Previous', callback_data: 'admin:checkQ:prev' },
+                      { text: '➡️ Next', callback_data: 'admin:checkQ:next' }
+                    ],
+                    [
+                      { text: '📝 Edit', callback_data: `admin:edit:${questionIndex}` },
+                      { text: '🗑️ Delete', callback_data: `admin:del:${questionIndex}` }
+                    ],
+                    [
+                      { text: '📤 Post Now', callback_data: `admin:postNow:${questionIndex}` }
+                    ],
+                    [
+                      { text: '✖️ Close', callback_data: 'admin:checkQ:close' }
+                    ]
+                  ]
+                };
+                
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, { reply_markup: keyboard });
+                return new Response('OK');
+              }
               
               // Admin free-text template upload - try multiple questions first
               const multipleQuestions = parseMultipleQuestions(message.text);
@@ -2035,7 +2097,30 @@ export default {
             
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, message, { reply_markup: keyboard });
 
-
+          } else if (data === 'admin:jumpToQuestion') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const totalQuestions = questions.length;
+            
+            if (totalQuestions === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ No questions in database to jump to.');
+              return new Response('OK');
+            }
+            
+            // Set state to expect question number input
+            await env.STATE.put('admin:jumpToQuestion:pending', '1');
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+              `🎯 **Jump to Question**\n\n` +
+              `📊 Total questions in database: ${totalQuestions}\n\n` +
+              `📝 **Type the question number** (1 to ${totalQuestions}) to jump directly to that question.\n\n` +
+              `💡 **Examples:**\n` +
+              `• Type \`5\` to jump to question 5\n` +
+              `• Type \`${totalQuestions}\` to jump to the last question\n` +
+              `• Type \`1\` to jump to the first question\n\n` +
+              `❌ **To cancel:** Type anything else or use another admin command.`
+            );
 
           } else if (data === 'admin:manage') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
