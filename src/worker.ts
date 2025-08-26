@@ -1303,10 +1303,15 @@ export default {
               
               // Check if admin is trying to jump to a specific question
               const jumpPending = await env.STATE.get('admin:jumpToQuestion:pending');
+              console.log(`🔍 Checking jumpToQuestion pending: ${jumpPending}`);
+              
               if (jumpPending === '1') {
+                console.log('✅ Jump to Question pending detected, processing input');
                 await env.STATE.delete('admin:jumpToQuestion:pending');
                 
                 const questionNumber = parseInt(message.text.trim(), 10);
+                console.log(`📝 Parsed question number: ${questionNumber} from input: "${message.text}"`);
+                
                 const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
                 const totalQuestions = questions.length;
                 
@@ -2100,8 +2105,12 @@ export default {
           } else if (data === 'admin:jumpToQuestion') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             
+            console.log('🎯 Jump to Question button clicked');
+            
             const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
             const totalQuestions = questions.length;
+            
+            console.log(`📊 Total questions found: ${totalQuestions}`);
             
             if (totalQuestions === 0) {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ No questions in database to jump to.');
@@ -2110,6 +2119,7 @@ export default {
             
             // Set state to expect question number input
             await env.STATE.put('admin:jumpToQuestion:pending', '1');
+            console.log('✅ Set jumpToQuestion pending state');
             
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
               `🎯 **Jump to Question**\n\n` +
