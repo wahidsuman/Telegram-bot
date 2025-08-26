@@ -1327,12 +1327,13 @@ export default {
               }
 
             } else if (message.text) {
-              // Check if admin is trying to jump to a specific question FIRST
+              // Clear any pending edit states first
+              await env.STATE.delete('admin:edit:idx');
+              
+              // Check if admin is trying to jump to a specific question (ONLY if explicitly requested)
               const jumpPending = await env.STATE.get('admin:jumpToQuestion:pending');
               console.log(`🔍 Checking jumpToQuestion pending: ${jumpPending}`);
               console.log(`🔍 Message text: "${message.text}"`);
-              console.log(`🔍 Is admin: ${isAdmin}`);
-              console.log(`🔍 Chat ID: ${chatId}`);
               
               if (jumpPending === '1') {
                 console.log('✅ Jump to Question pending detected, processing input');
@@ -1395,10 +1396,8 @@ export default {
                 return new Response('OK');
               }
               
-              // No fallback - only work when explicitly requested
-              
-              // Clear any pending edit states first
-              await env.STATE.delete('admin:edit:idx');
+              // If not jumping to question, process as question upload
+              console.log('📤 Processing as question upload...');
               
               // Admin free-text template upload - try multiple questions first
               const multipleQuestions = parseMultipleQuestions(message.text);
