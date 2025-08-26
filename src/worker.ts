@@ -1943,30 +1943,87 @@ export default {
               return new Response('OK');
             }
             
-            // Show first 5 questions for manual verification
-            const sampleQuestions = questions.slice(0, 5).map((q, i) => 
-              `**Question ${i + 1}:**\n` +
-              `📝 **Q:** ${q.question}\n\n` +
-              `A) ${q.options.A}\n` +
-              `B) ${q.options.B}\n` +
-              `C) ${q.options.C}\n` +
-              `D) ${q.options.D}\n\n` +
-              `✅ **Answer:** ${q.answer}\n` +
-              `📖 **Explanation:** ${q.explanation}\n\n` +
-              `🔍 **Verification:** Does answer "${q.answer}" match the explanation?\n` +
-              `---`
-            ).join('\n\n');
+            // Start with first question and save state
+            await env.STATE.put('admin:checkQuestion:index', '0');
+            const question = questions[0];
             
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
-              `🔍 **MANUAL VERIFICATION - First 5 Questions**\n\n` +
-              `📊 Total questions in database: ${totalQuestions}\n\n` +
-              `${sampleQuestions}\n\n` +
-              `⚠️ **Check if:**\n` +
-              `• Answer matches the explanation\n` +
-              `• Answer text makes sense with the question\n` +
-              `• Explanation refers to the correct answer\n\n` +
-              `🔄 If these look wrong, run "Fix Data Integrity" again.`
-            );
+            const message = 
+              `🔍 **QUESTION VERIFICATION - Question 1 of ${totalQuestions}**\n\n` +
+              `📝 **Question:** ${question.question}\n\n` +
+              `A) ${question.options.A}\n` +
+              `B) ${question.options.B}\n` +
+              `C) ${question.options.C}\n` +
+              `D) ${question.options.D}\n\n` +
+              `✅ **Answer:** ${question.answer}\n` +
+              `📖 **Explanation:** ${question.explanation}\n\n` +
+              `🔍 **Verification:** Does answer "${question.answer}" match the explanation?`;
+            
+            const keyboard = {
+              inline_keyboard: [
+                [
+                  { text: '⬅️ Previous', callback_data: 'admin:checkQ:prev' },
+                  { text: '➡️ Next', callback_data: 'admin:checkQ:next' }
+                ],
+                [
+                  { text: '✖️ Close', callback_data: 'admin:checkQ:close' }
+                ]
+              ]
+            };
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, message, { reply_markup: keyboard });
+          } else if (data === 'admin:checkQ:close') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Closed');
+            await env.STATE.delete('admin:checkQuestion:index');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Question verification closed.');
+          } else if (data === 'admin:checkQ:prev' || data === 'admin:checkQ:next') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const totalQuestions = questions.length;
+            
+            if (totalQuestions === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ No questions in database.');
+              return new Response('OK');
+            }
+            
+            const currentIndexStr = await env.STATE.get('admin:checkQuestion:index') || '0';
+            let currentIndex = parseInt(currentIndexStr, 10);
+            
+            if (data === 'admin:checkQ:next') {
+              currentIndex = (currentIndex + 1) % totalQuestions;
+            } else {
+              currentIndex = (currentIndex - 1 + totalQuestions) % totalQuestions;
+            }
+            
+            await env.STATE.put('admin:checkQuestion:index', String(currentIndex));
+            
+            const question = questions[currentIndex];
+            const questionNumber = currentIndex + 1;
+            
+            const message = 
+              `🔍 **QUESTION VERIFICATION - Question ${questionNumber} of ${totalQuestions}**\n\n` +
+              `📝 **Question:** ${question.question}\n\n` +
+              `A) ${question.options.A}\n` +
+              `B) ${question.options.B}\n` +
+              `C) ${question.options.C}\n` +
+              `D) ${question.options.D}\n\n` +
+              `✅ **Answer:** ${question.answer}\n` +
+              `📖 **Explanation:** ${question.explanation}\n\n` +
+              `🔍 **Verification:** Does answer "${question.answer}" match the explanation?`;
+            
+            const keyboard = {
+              inline_keyboard: [
+                [
+                  { text: '⬅️ Previous', callback_data: 'admin:checkQ:prev' },
+                  { text: '➡️ Next', callback_data: 'admin:checkQ:next' }
+                ],
+                [
+                  { text: '✖️ Close', callback_data: 'admin:checkQ:close' }
+                ]
+              ]
+            };
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, message, { reply_markup: keyboard });
 
 
 
