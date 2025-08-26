@@ -1965,6 +1965,13 @@ export default {
                   { text: '➡️ Next', callback_data: 'admin:checkQ:next' }
                 ],
                 [
+                  { text: '📝 Edit', callback_data: `admin:edit:0` },
+                  { text: '🗑️ Delete', callback_data: `admin:del:0` }
+                ],
+                [
+                  { text: '📤 Post Now', callback_data: `admin:postNow:0` }
+                ],
+                [
                   { text: '✖️ Close', callback_data: 'admin:checkQ:close' }
                 ]
               ]
@@ -2016,6 +2023,13 @@ export default {
                 [
                   { text: '⬅️ Previous', callback_data: 'admin:checkQ:prev' },
                   { text: '➡️ Next', callback_data: 'admin:checkQ:next' }
+                ],
+                [
+                  { text: '📝 Edit', callback_data: `admin:edit:${currentIndex}` },
+                  { text: '🗑️ Delete', callback_data: `admin:del:${currentIndex}` }
+                ],
+                [
+                  { text: '📤 Post Now', callback_data: `admin:postNow:${currentIndex}` }
                 ],
                 [
                   { text: '✖️ Close', callback_data: 'admin:checkQ:close' }
