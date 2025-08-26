@@ -718,13 +718,21 @@ function parseMultipleQuestions(text: string): Array<{ question: string; options
 }
 
 async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: string, targetGroupId: string): Promise<{ uploaded: number; total: number; sent: number; unsent: number; skippedThisTime: number; skippedTotal: number }> {
+  console.log('📁 Starting file upload processing...');
+  console.log('📁 File ID:', fileId);
+  
   const fileInfo = await getFile(token, fileId);
   
   if (!fileInfo.ok) {
+    console.error('❌ Failed to get file info:', fileInfo);
     throw new Error('Failed to get file info');
   }
   
+  console.log('📁 File info received:', fileInfo.result);
+  
   const content = await downloadFile(token, fileInfo.result.file_path);
+  console.log('📁 File content length:', content.length);
+  console.log('📁 File content preview:', content.substring(0, 200) + '...');
   
   let newQuestions: any[] = [];
   
@@ -791,13 +799,22 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
   
   try {
     // Try parsing as JSON array or object first
+    console.log('🔍 Attempting JSON parsing...');
     const parsed = JSON.parse(content);
+    console.log('✅ JSON parsed successfully');
+    console.log('🔍 Parsed type:', Array.isArray(parsed) ? 'Array' : 'Object');
+    console.log('🔍 Parsed length:', Array.isArray(parsed) ? parsed.length : 1);
+    
     if (Array.isArray(parsed)) {
       newQuestions = parsed;
+      console.log('✅ Using as JSON array');
     } else {
       newQuestions = [parsed];
+      console.log('✅ Using as single JSON object');
     }
-  } catch {
+  } catch (jsonError) {
+    console.log('❌ JSON parsing failed:', jsonError);
+    console.log('🔍 Trying CSV parsing...');
     // Try CSV
     const csvParsed = parseCsvQuestions(content);
     if (csvParsed.length > 0) {
@@ -817,14 +834,26 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
   }
   
   // Validate and trim questions
+  console.log('🔍 Validating questions...');
+  console.log('🔍 Total questions to validate:', newQuestions.length);
+  
   const validQuestions: Question[] = [];
-  for (const q of newQuestions) {
+  for (let i = 0; i < newQuestions.length; i++) {
+    const q = newQuestions[i];
+    console.log(`🔍 Validating question ${i + 1}:`, q.question?.substring(0, 50) + '...');
+    
     if (validateQuestion(q)) {
       validQuestions.push(trimQuestion(q));
+      console.log(`✅ Question ${i + 1} is valid`);
+    } else {
+      console.log(`❌ Question ${i + 1} is invalid`);
     }
   }
   
+  console.log('🔍 Valid questions found:', validQuestions.length);
+  
   if (validQuestions.length === 0) {
+    console.error('❌ No valid questions found after validation');
     throw new Error('No valid questions found');
   }
   
@@ -1532,6 +1561,9 @@ export default {
               // Handle file upload - ensure we respond to admin
               try {
                 console.log('Processing file upload from admin:', chatId);
+                console.log('File name:', message.document.file_name);
+                console.log('File size:', message.document.file_size);
+                console.log('MIME type:', message.document.mime_type);
                 
                 // Check if it's a PDF
                 if (message.document.file_name?.toLowerCase().endsWith('.pdf')) {
