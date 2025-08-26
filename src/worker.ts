@@ -1067,7 +1067,6 @@ export default {
                   [{ text: stopButtonText, callback_data: 'admin:stopPosts' }],
                   [{ text: '🔍 Check Data Integrity', callback_data: 'admin:checkDataIntegrity' }],
                   [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
-                  [{ text: '🗑️ DELETE ALL DATA', callback_data: 'admin:deleteAllData' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1235,7 +1234,6 @@ export default {
                   [{ text: stopButtonText, callback_data: 'admin:stopPosts' }],
                   [{ text: '🔍 Check Data Integrity', callback_data: 'admin:checkDataIntegrity' }],
                   [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
-                  [{ text: '🗑️ DELETE ALL DATA', callback_data: 'admin:deleteAllData' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
@@ -1869,87 +1867,7 @@ export default {
                   `🟢 Click "Stop Hourly Posts" again to restart automatic posting.`
                 );
               }
-            } else if (data === 'admin:deleteAllData') {
-              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '⚠️ Delete All Data Confirmation');
-              
-              // Show confirmation message with keyboard
-              const keyboard = {
-                inline_keyboard: [
-                  [
-                    { text: '✅ YES, DELETE EVERYTHING', callback_data: 'admin:confirmDeleteAll' },
-                    { text: '❌ NO, CANCEL', callback_data: 'admin:cancelDeleteAll' }
-                  ]
-                ]
-              };
-              
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
-                `⚠️ **DELETE ALL DATA CONFIRMATION**\n\n` +
-                `🚨 **This will PERMANENTLY DELETE:**\n` +
-                `• All questions in database\n` +
-                `• All user statistics\n` +
-                `• All daily/monthly reports\n` +
-                `• All backups\n` +
-                `• All admin states\n` +
-                `• All posting indexes\n\n` +
-                `💥 **This action CANNOT be undone!**\n\n` +
-                `Are you absolutely sure you want to delete everything?`,
-                { reply_markup: keyboard }
-              );
-            } else if (data === 'admin:confirmDeleteAll') {
-              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '🗑️ DELETING ALL DATA...');
-              
-              // Get all keys first
-              const keys = await env.STATE.list();
-              let deletedCount = 0;
-              let backupCount = 0;
-              
-              // Delete EVERYTHING except essential config
-              for (const key of keys.keys) {
-                // Keep only essential bot configuration
-                if (!key.name.startsWith('bot:') && 
-                    key.name !== 'discount_buttons' && 
-                    key.name !== 'admin:postsStopped') {
-                  
-                  // Count what we're deleting
-                  if (key.name.startsWith('questions_backup_')) {
-                    backupCount++;
-                  } else if (key.name === 'questions') {
-                    deletedCount++;
-                  }
-                  
-                  // Delete the key
-                  await env.STATE.delete(key.name);
-                }
-              }
-              
-              // Also delete essential keys that might have old data
-              await env.STATE.delete('questions');
-              await env.STATE.delete(`idx:${env.TARGET_GROUP_ID}`);
-              await env.STATE.delete(`idx:${env.TARGET_CHANNEL_ID}`);
-              await env.STATE.delete(`idx:${env.TARGET_DISCUSSION_GROUP_ID}`);
-              
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
-                `🗑️ **COMPLETE DATA WIPE SUCCESSFUL!**\n\n` +
-                `💥 **EVERYTHING DELETED:**\n` +
-                `• All questions (${deletedCount})\n` +
-                `• All backups (${backupCount})\n` +
-                `• All sharded data (q: keys)\n` +
-                `• All user statistics\n` +
-                `• All posting indexes\n` +
-                `• All admin states\n` +
-                `• All daily/monthly reports\n` +
-                `• All seen attempts\n\n` +
-                `🧹 **Database is now COMPLETELY EMPTY:**\n` +
-                `• ✅ No old questions\n` +
-                `• ✅ No old backups\n` +
-                `• ✅ No corrupted data\n` +
-                `• ✅ No sharded storage\n` +
-                `• ✅ Fresh start guaranteed\n\n` +
-                `📤 **Next step:** Upload your fresh questions!`
-              );
-            } else if (data === 'admin:cancelDeleteAll') {
-              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Delete cancelled');
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ **Delete All Data cancelled.**\n\nYour data is safe! 🛡️');
+
             } else if (data === 'admin:checkDataIntegrity') {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '🔍 Checking data integrity...');
               
