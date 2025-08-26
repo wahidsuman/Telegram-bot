@@ -457,39 +457,34 @@ async function showQuestionsPage(kv: KVNamespace, token: string, chatId: number,
   // Create navigation buttons
   const keyboard: any[] = [];
   
-  // Add edit/delete buttons for each question (2 rows of 5 buttons each)
-  const editDeleteRow1: any[] = [];
-  const editDeleteRow2: any[] = [];
-  
-  for (let i = 0; i < Math.min(5, pageQuestions.length); i++) {
-    const questionIndex = startIndex + i;
-    editDeleteRow1.push({ text: `📝${questionIndex + 1}`, callback_data: `admin:edit:${questionIndex}` });
-  }
-  
-  for (let i = 5; i < pageQuestions.length; i++) {
-    const questionIndex = startIndex + i;
-    editDeleteRow2.push({ text: `📝${questionIndex + 1}`, callback_data: `admin:edit:${questionIndex}` });
-  }
-  
-  if (editDeleteRow1.length > 0) keyboard.push(editDeleteRow1);
-  if (editDeleteRow2.length > 0) keyboard.push(editDeleteRow2);
-  
-  // Add delete buttons row
+  // Add edit/delete/post buttons for each question (3 rows of 5 buttons each)
+  const editRow1: any[] = [];
+  const editRow2: any[] = [];
   const deleteRow1: any[] = [];
   const deleteRow2: any[] = [];
+  const postRow1: any[] = [];
+  const postRow2: any[] = [];
   
   for (let i = 0; i < Math.min(5, pageQuestions.length); i++) {
     const questionIndex = startIndex + i;
+    editRow1.push({ text: `📝${questionIndex + 1}`, callback_data: `admin:edit:${questionIndex}` });
     deleteRow1.push({ text: `🗑️${questionIndex + 1}`, callback_data: `admin:del:${questionIndex}` });
+    postRow1.push({ text: `📤${questionIndex + 1}`, callback_data: `admin:postNow:${questionIndex}` });
   }
   
   for (let i = 5; i < pageQuestions.length; i++) {
     const questionIndex = startIndex + i;
+    editRow2.push({ text: `📝${questionIndex + 1}`, callback_data: `admin:edit:${questionIndex}` });
     deleteRow2.push({ text: `🗑️${questionIndex + 1}`, callback_data: `admin:del:${questionIndex}` });
+    postRow2.push({ text: `📤${questionIndex + 1}`, callback_data: `admin:postNow:${questionIndex}` });
   }
   
+  if (editRow1.length > 0) keyboard.push(editRow1);
+  if (editRow2.length > 0) keyboard.push(editRow2);
   if (deleteRow1.length > 0) keyboard.push(deleteRow1);
   if (deleteRow2.length > 0) keyboard.push(deleteRow2);
+  if (postRow1.length > 0) keyboard.push(postRow1);
+  if (postRow2.length > 0) keyboard.push(postRow2);
   
   // Add navigation buttons
   const navRow: any[] = [];
@@ -2046,6 +2041,8 @@ export default {
                 { text: '📝 Edit', callback_data: `admin:edit:${currentIndex + 0}` },
                 { text: '🗑️ Delete', callback_data: `admin:del:${currentIndex + 0}` }
               ], [
+                { text: '📤 Post Now', callback_data: `admin:postNow:${currentIndex + 0}` }
+              ], [
                 { text: '✖️ Close', callback_data: 'admin:mg:close' }
               ]] };
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, txt, { reply_markup: kb });
@@ -2074,6 +2071,8 @@ export default {
               ], [
                 { text: '📝 Edit', callback_data: `admin:edit:${currentIndex + idx}` },
                 { text: '🗑️ Delete', callback_data: `admin:del:${currentIndex + idx}` }
+              ], [
+                { text: '📤 Post Now', callback_data: `admin:postNow:${currentIndex + idx}` }
               ], [
                 { text: '✖️ Close', callback_data: 'admin:mg:close' }
               ]] };
@@ -2148,6 +2147,64 @@ export default {
               const deleted = list.splice(idx, 1)[0];
               await putJSON(env.STATE, 'questions', list);
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `🗑️ Deleted question #${idx + 1}:\n\n${truncate(deleted.question, 100)}...\n\nRemaining: ${list.length} questions`);
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Invalid question index');
+            }
+          } else if (data.startsWith('admin:postNow:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '📤 Posting now...');
+            const idx = parseInt(data.split(':')[2], 10);
+            const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+            if (idx >= 0 && idx < list.length) {
+              const question = list[idx];
+              
+              // Post to all targets immediately
+              const text = `<b>🧠 MCQ #${idx + 1}</b>\n\n<b>${esc(question.question)}</b>\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}`;
+              
+              const keyboard = {
+                inline_keyboard: [
+                  [
+                    { text: 'A', callback_data: `ans:${idx}:A` },
+                    { text: 'B', callback_data: `ans:${idx}:B` },
+                    { text: 'C', callback_data: `ans:${idx}:C` },
+                    { text: 'D', callback_data: `ans:${idx}:D` }
+                  ],
+                  [
+                    { text: '💬 Join Discussion', url: 'https://t.me/+u0P8X-ZWHU1jMDQ1' },
+                    { text: '📊 Your Stats', callback_data: 'user:stats' }
+                  ]
+                ]
+              };
+              
+              // Post to all targets
+              let successCount = 0;
+              let errorCount = 0;
+              
+              try {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, text, { reply_markup: keyboard, parse_mode: 'HTML' });
+                successCount++;
+              } catch (error) {
+                errorCount++;
+              }
+              
+              if (env.TARGET_CHANNEL_ID) {
+                try {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, env.TARGET_CHANNEL_ID, text, { reply_markup: keyboard, parse_mode: 'HTML' });
+                  successCount++;
+                } catch (error) {
+                  errorCount++;
+                }
+              }
+              
+              if (env.TARGET_DISCUSSION_GROUP_ID) {
+                try {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, env.TARGET_DISCUSSION_GROUP_ID, text, { reply_markup: keyboard, parse_mode: 'HTML' });
+                  successCount++;
+                } catch (error) {
+                  errorCount++;
+                }
+              }
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `📤 **Question #${idx + 1} posted successfully!**\n\n✅ **Posted to:** ${successCount} targets\n❌ **Failed:** ${errorCount} targets\n\n**Question:** ${truncate(question.question, 100)}...`);
             } else {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Invalid question index');
             }
