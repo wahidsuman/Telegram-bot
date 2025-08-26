@@ -1330,74 +1330,83 @@ export default {
               // Clear any pending edit states first
               await env.STATE.delete('admin:edit:idx');
               
-              // Check if admin is trying to jump to a specific question (ONLY if explicitly requested)
-              const jumpPending = await env.STATE.get('admin:jumpToQuestion:pending');
-              console.log(`🔍 Checking jumpToQuestion pending: ${jumpPending}`);
-              console.log(`🔍 Message text: "${message.text}"`);
+              // SIMPLE RULE: If text starts with a number and is short, it's probably a jump request
+              const trimmedText = message.text.trim();
+              const isShortNumber = /^\d{1,4}$/.test(trimmedText) && trimmedText.length <= 4;
               
-              if (jumpPending === '1') {
-                console.log('✅ Jump to Question pending detected, processing input');
-                await env.STATE.delete('admin:jumpToQuestion:pending');
+              if (isShortNumber) {
+                // This looks like a jump request - check if jump mode is active
+                const jumpPending = await env.STATE.get('admin:jumpToQuestion:pending');
+                console.log(`🔍 Short number detected: "${trimmedText}", jump pending: ${jumpPending}`);
                 
-                const questionNumber = parseInt(message.text.trim(), 10);
-                console.log(`📝 Parsed question number: ${questionNumber} from input: "${message.text}"`);
-                
-                const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
-                const totalQuestions = questions.length;
-                
-                if (isNaN(questionNumber) || questionNumber < 1 || questionNumber > totalQuestions) {
-                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
-                    `❌ **Invalid question number!**\n\n` +
-                    `📝 You entered: \`${message.text}\`\n` +
-                    `📊 Valid range: 1 to ${totalQuestions}\n\n` +
-                    `💡 **Try again:** Click "🎯 Jump to Question" and enter a valid number.`
-                  );
+                if (jumpPending === '1') {
+                  console.log('✅ Jump to Question pending detected, processing input');
+                  await env.STATE.delete('admin:jumpToQuestion:pending');
+                  
+                  const questionNumber = parseInt(trimmedText, 10);
+                  console.log(`📝 Parsed question number: ${questionNumber}`);
+                  
+                  const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+                  const totalQuestions = questions.length;
+                  
+                  if (questionNumber < 1 || questionNumber > totalQuestions) {
+                    await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                      `❌ **Invalid question number!**\n\n` +
+                      `📝 You entered: \`${trimmedText}\`\n` +
+                      `📊 Valid range: 1 to ${totalQuestions}\n\n` +
+                      `💡 **Try again:** Click "🎯 Jump to Question" and enter a valid number.`
+                    );
+                    return new Response('OK');
+                  }
+                  
+                  // Convert to 0-based index
+                  const questionIndex = questionNumber - 1;
+                  const question = questions[questionIndex];
+                  
+                  // Set the check question index to this question
+                  await env.STATE.put('admin:checkQuestion:index', String(questionIndex));
+                  
+                  const message = 
+                    `🎯 **JUMPED TO QUESTION ${questionNumber} of ${totalQuestions}**\n\n` +
+                    `📝 **Question:** ${question.question}\n\n` +
+                    `A) ${question.options.A}\n` +
+                    `B) ${question.options.B}\n` +
+                    `C) ${question.options.C}\n` +
+                    `D) ${question.options.D}\n\n` +
+                    `✅ **Answer:** ${question.answer}\n` +
+                    `📖 **Explanation:** ${question.explanation}\n\n` +
+                    `🔍 **Verification:** Does answer "${question.answer}" match the explanation?`;
+                  
+                  const keyboard = {
+                    inline_keyboard: [
+                      [
+                        { text: '⬅️ Previous', callback_data: 'admin:checkQ:prev' },
+                        { text: '➡️ Next', callback_data: 'admin:checkQ:next' }
+                      ],
+                      [
+                        { text: '📝 Edit', callback_data: `admin:edit:${questionIndex}` },
+                        { text: '🗑️ Delete', callback_data: `admin:del:${questionIndex}` }
+                      ],
+                      [
+                        { text: '📤 Post Now', callback_data: `admin:postNow:${questionIndex}` }
+                      ],
+                      [
+                        { text: '✖️ Close', callback_data: 'admin:checkQ:close' }
+                      ]
+                    ]
+                  };
+                  
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, { reply_markup: keyboard });
+                  return new Response('OK');
+                } else {
+                  // Short number but jump mode not active - ignore it
+                  console.log('❌ Short number detected but jump mode not active, ignoring');
                   return new Response('OK');
                 }
-                
-                // Convert to 0-based index
-                const questionIndex = questionNumber - 1;
-                const question = questions[questionIndex];
-                
-                // Set the check question index to this question
-                await env.STATE.put('admin:checkQuestion:index', String(questionIndex));
-                
-                const message = 
-                  `🎯 **JUMPED TO QUESTION ${questionNumber} of ${totalQuestions}**\n\n` +
-                  `📝 **Question:** ${question.question}\n\n` +
-                  `A) ${question.options.A}\n` +
-                  `B) ${question.options.B}\n` +
-                  `C) ${question.options.C}\n` +
-                  `D) ${question.options.D}\n\n` +
-                  `✅ **Answer:** ${question.answer}\n` +
-                  `📖 **Explanation:** ${question.explanation}\n\n` +
-                  `🔍 **Verification:** Does answer "${question.answer}" match the explanation?`;
-                
-                const keyboard = {
-                  inline_keyboard: [
-                    [
-                      { text: '⬅️ Previous', callback_data: 'admin:checkQ:prev' },
-                      { text: '➡️ Next', callback_data: 'admin:checkQ:next' }
-                    ],
-                    [
-                      { text: '📝 Edit', callback_data: `admin:edit:${questionIndex}` },
-                      { text: '🗑️ Delete', callback_data: `admin:del:${questionIndex}` }
-                    ],
-                    [
-                      { text: '📤 Post Now', callback_data: `admin:postNow:${questionIndex}` }
-                    ],
-                    [
-                      { text: '✖️ Close', callback_data: 'admin:checkQ:close' }
-                    ]
-                  ]
-                };
-                
-                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, { reply_markup: keyboard });
-                return new Response('OK');
               }
               
-              // If not jumping to question, process as question upload
-              console.log('📤 Processing as question upload...');
+              // If not a short number, process as question upload
+              console.log('📤 Processing as question upload (not a short number)...');
               
               // Admin free-text template upload - try multiple questions first
               const multipleQuestions = parseMultipleQuestions(message.text);
