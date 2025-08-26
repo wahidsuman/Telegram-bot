@@ -920,6 +920,51 @@ async function formatDailyReport(kv: KVNamespace, date: string): Promise<string>
   return report;
 }
 
+async function showQuestionNumberPage(kv: KVNamespace, token: string, chatId: string, page: number, totalQuestions: number): Promise<void> {
+  const questionsPerPage = 20;
+  const startQuestion = page * questionsPerPage + 1;
+  const endQuestion = Math.min((page + 1) * questionsPerPage, totalQuestions);
+  const totalPages = Math.ceil(totalQuestions / questionsPerPage);
+  
+  let message = `🎯 **Jump to Question - Page ${page + 1} of ${totalPages}**\n\n`;
+  message += `📊 Total questions: ${totalQuestions}\n`;
+  message += `📄 Showing questions ${startQuestion} to ${endQuestion}\n\n`;
+  message += `💡 **Click any number to jump to that question**`;
+  
+  const keyboard: any[] = [];
+  
+  // Create rows of 5 buttons each
+  for (let i = 0; i < questionsPerPage; i += 5) {
+    const row: any[] = [];
+    for (let j = 0; j < 5; j++) {
+      const questionNumber = startQuestion + i + j;
+      if (questionNumber <= totalQuestions) {
+        row.push({ text: `${questionNumber}`, callback_data: `admin:jumpTo:${questionNumber - 1}` });
+      }
+    }
+    if (row.length > 0) {
+      keyboard.push(row);
+    }
+  }
+  
+  // Navigation buttons
+  const navRow: any[] = [];
+  if (page > 0) {
+    navRow.push({ text: '⬅️ Previous', callback_data: `admin:jumpToPage:${page - 1}` });
+  }
+  if (page < totalPages - 1) {
+    navRow.push({ text: '➡️ Next', callback_data: `admin:jumpToPage:${page + 1}` });
+  }
+  if (navRow.length > 0) {
+    keyboard.push(navRow);
+  }
+  
+  // Close button
+  keyboard.push([{ text: '✖️ Close', callback_data: 'admin:jumpToQuestion:close' }]);
+  
+  await sendMessage(token, chatId, message, { reply_markup: { inline_keyboard: keyboard } });
+}
+
 async function formatMonthlyReport(kv: KVNamespace, yyyyMM: string): Promise<string> {
   const stats = await getJSON<DayStats>(kv, `stats:monthly:${yyyyMM}`, { total: 0, users: {} });
   
@@ -1330,83 +1375,8 @@ export default {
               // Clear any pending edit states first
               await env.STATE.delete('admin:edit:idx');
               
-              // SIMPLE RULE: If text starts with a number and is short, it's probably a jump request
-              const trimmedText = message.text.trim();
-              const isShortNumber = /^\d{1,4}$/.test(trimmedText) && trimmedText.length <= 4;
-              
-              if (isShortNumber) {
-                // This looks like a jump request - check if jump mode is active
-                const jumpPending = await env.STATE.get('admin:jumpToQuestion:pending');
-                console.log(`🔍 Short number detected: "${trimmedText}", jump pending: ${jumpPending}`);
-                
-                if (jumpPending === '1') {
-                  console.log('✅ Jump to Question pending detected, processing input');
-                  await env.STATE.delete('admin:jumpToQuestion:pending');
-                  
-                  const questionNumber = parseInt(trimmedText, 10);
-                  console.log(`📝 Parsed question number: ${questionNumber}`);
-                  
-                  const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
-                  const totalQuestions = questions.length;
-                  
-                  if (questionNumber < 1 || questionNumber > totalQuestions) {
-                    await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
-                      `❌ **Invalid question number!**\n\n` +
-                      `📝 You entered: \`${trimmedText}\`\n` +
-                      `📊 Valid range: 1 to ${totalQuestions}\n\n` +
-                      `💡 **Try again:** Click "🎯 Jump to Question" and enter a valid number.`
-                    );
-                    return new Response('OK');
-                  }
-                  
-                  // Convert to 0-based index
-                  const questionIndex = questionNumber - 1;
-                  const question = questions[questionIndex];
-                  
-                  // Set the check question index to this question
-                  await env.STATE.put('admin:checkQuestion:index', String(questionIndex));
-                  
-                  const message = 
-                    `🎯 **JUMPED TO QUESTION ${questionNumber} of ${totalQuestions}**\n\n` +
-                    `📝 **Question:** ${question.question}\n\n` +
-                    `A) ${question.options.A}\n` +
-                    `B) ${question.options.B}\n` +
-                    `C) ${question.options.C}\n` +
-                    `D) ${question.options.D}\n\n` +
-                    `✅ **Answer:** ${question.answer}\n` +
-                    `📖 **Explanation:** ${question.explanation}\n\n` +
-                    `🔍 **Verification:** Does answer "${question.answer}" match the explanation?`;
-                  
-                  const keyboard = {
-                    inline_keyboard: [
-                      [
-                        { text: '⬅️ Previous', callback_data: 'admin:checkQ:prev' },
-                        { text: '➡️ Next', callback_data: 'admin:checkQ:next' }
-                      ],
-                      [
-                        { text: '📝 Edit', callback_data: `admin:edit:${questionIndex}` },
-                        { text: '🗑️ Delete', callback_data: `admin:del:${questionIndex}` }
-                      ],
-                      [
-                        { text: '📤 Post Now', callback_data: `admin:postNow:${questionIndex}` }
-                      ],
-                      [
-                        { text: '✖️ Close', callback_data: 'admin:checkQ:close' }
-                      ]
-                    ]
-                  };
-                  
-                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, { reply_markup: keyboard });
-                  return new Response('OK');
-                } else {
-                  // Short number but jump mode not active - ignore it
-                  console.log('❌ Short number detected but jump mode not active, ignoring');
-                  return new Response('OK');
-                }
-              }
-              
-              // If not a short number, process as question upload
-              console.log('📤 Processing as question upload (not a short number)...');
+              // All text input is now processed as question upload (no more jump conflicts)
+              console.log('📤 Processing as question upload...');
               
               // Admin free-text template upload - try multiple questions first
               const multipleQuestions = parseMultipleQuestions(message.text);
@@ -2163,38 +2133,71 @@ export default {
               return new Response('OK');
             }
             
-            // Set state to expect question number input
-            await env.STATE.put('admin:jumpToQuestion:pending', '1');
-            console.log('✅ Set jumpToQuestion pending state');
-            
-            // Test the state was set correctly
-            const testState = await env.STATE.get('admin:jumpToQuestion:pending');
-            console.log(`🧪 Test state after setting: ${testState}`);
-            
-            const keyboard = {
-              inline_keyboard: [
-                [
-                  { text: '❌ Cancel Jump', callback_data: 'admin:jumpToQuestion:cancel' }
-                ]
-              ]
-            };
-            
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
-              `🎯 **Jump to Question**\n\n` +
-              `📊 Total questions in database: ${totalQuestions}\n\n` +
-              `📝 **Type the question number** (1 to ${totalQuestions}) to jump directly to that question.\n\n` +
-              `💡 **Examples:**\n` +
-              `• Type \`5\` to jump to question 5\n` +
-              `• Type \`${totalQuestions}\` to jump to the last question\n` +
-              `• Type \`1\` to jump to the first question\n\n` +
-              `❌ **To cancel:** Click "❌ Cancel Jump" or type anything else.`,
-              { reply_markup: keyboard }
-            );
+            // Show first page of question numbers (1-20)
+            await showQuestionNumberPage(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId!, 0, totalQuestions);
 
           } else if (data === 'admin:jumpToQuestion:cancel') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
-            await env.STATE.delete('admin:jumpToQuestion:pending');
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Jump to Question cancelled.');
+
+          } else if (data === 'admin:jumpToQuestion:close') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Closed');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Jump to Question closed.');
+
+          } else if (data.startsWith('admin:jumpToPage:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const page = parseInt(data.split(':')[2], 10);
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const totalQuestions = questions.length;
+            await showQuestionNumberPage(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId!, page, totalQuestions);
+
+          } else if (data.startsWith('admin:jumpTo:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const questionIndex = parseInt(data.split(':')[2], 10);
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const totalQuestions = questions.length;
+            
+            if (questionIndex >= 0 && questionIndex < totalQuestions) {
+              const question = questions[questionIndex];
+              const questionNumber = questionIndex + 1;
+              
+              // Set the check question index to this question
+              await env.STATE.put('admin:checkQuestion:index', String(questionIndex));
+              
+              const message = 
+                `🎯 **JUMPED TO QUESTION ${questionNumber} of ${totalQuestions}**\n\n` +
+                `📝 **Question:** ${question.question}\n\n` +
+                `A) ${question.options.A}\n` +
+                `B) ${question.options.B}\n` +
+                `C) ${question.options.C}\n` +
+                `D) ${question.options.D}\n\n` +
+                `✅ **Answer:** ${question.answer}\n` +
+                `📖 **Explanation:** ${question.explanation}\n\n` +
+                `🔍 **Verification:** Does answer "${question.answer}" match the explanation?`;
+              
+              const keyboard = {
+                inline_keyboard: [
+                  [
+                    { text: '⬅️ Previous', callback_data: 'admin:checkQ:prev' },
+                    { text: '➡️ Next', callback_data: 'admin:checkQ:next' }
+                  ],
+                  [
+                    { text: '📝 Edit', callback_data: `admin:edit:${questionIndex}` },
+                    { text: '🗑️ Delete', callback_data: `admin:del:${questionIndex}` }
+                  ],
+                  [
+                    { text: '📤 Post Now', callback_data: `admin:postNow:${questionIndex}` }
+                  ],
+                  [
+                    { text: '✖️ Close', callback_data: 'admin:checkQ:close' }
+                  ]
+                ]
+              };
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, message, { reply_markup: keyboard });
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Invalid question index.');
+            }
 
           } else if (data === 'admin:manage') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
