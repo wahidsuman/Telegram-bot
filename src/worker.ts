@@ -403,31 +403,43 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
 }
 
 function validateQuestion(q: any): q is Question {
+  // Handle both lowercase and uppercase field names
+  const question = q.question || q.Question;
+  const options = q.options || { A: q.A, B: q.B, C: q.C, D: q.D };
+  const answer = q.answer || q.Answer;
+  const explanation = q.explanation || q.Explanation;
+  
   return (
     typeof q === 'object' &&
-    typeof q.question === 'string' &&
-    typeof q.options === 'object' &&
-    typeof q.options.A === 'string' &&
-    typeof q.options.B === 'string' &&
-    typeof q.options.C === 'string' &&
-    typeof q.options.D === 'string' &&
-    typeof q.answer === 'string' &&
-    ['A', 'B', 'C', 'D'].includes(q.answer) &&
-    typeof q.explanation === 'string'
+    typeof question === 'string' &&
+    typeof options === 'object' &&
+    typeof options.A === 'string' &&
+    typeof options.B === 'string' &&
+    typeof options.C === 'string' &&
+    typeof options.D === 'string' &&
+    typeof answer === 'string' &&
+    ['A', 'B', 'C', 'D'].includes(answer) &&
+    typeof explanation === 'string'
   );
 }
 
 function trimQuestion(q: any): Question {
+  // Handle both lowercase and uppercase field names
+  const question = (q.question || q.Question || '').trim();
+  const options = q.options || { A: q.A, B: q.B, C: q.C, D: q.D };
+  const answer = q.answer || q.Answer;
+  const explanation = (q.explanation || q.Explanation || '').trim();
+  
   return {
-    question: q.question.trim(),
+    question: question,
     options: {
-      A: q.options.A.trim(),
-      B: q.options.B.trim(),
-      C: q.options.C.trim(),
-      D: q.options.D.trim()
+      A: options.A.trim(),
+      B: options.B.trim(),
+      C: options.C.trim(),
+      D: options.D.trim()
     },
-    answer: q.answer,
-    explanation: q.explanation.trim()
+    answer: answer,
+    explanation: explanation
   };
 }
 
