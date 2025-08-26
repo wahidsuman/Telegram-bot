@@ -1395,60 +1395,7 @@ export default {
                 return new Response('OK');
               }
               
-              // Fallback: Check if message is just a number (simple jump to question)
-              const simpleNumber = parseInt(message.text.trim(), 10);
-              if (!isNaN(simpleNumber) && simpleNumber > 0 && simpleNumber <= 1000) {
-                console.log(`🔍 Fallback: Detected simple number: ${simpleNumber}`);
-                
-                const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
-                const totalQuestions = questions.length;
-                
-                if (simpleNumber <= totalQuestions) {
-                  console.log(`✅ Fallback: Jumping to question ${simpleNumber}`);
-                  
-                  // Convert to 0-based index
-                  const questionIndex = simpleNumber - 1;
-                  const question = questions[questionIndex];
-                  
-                  // Set the check question index to this question
-                  await env.STATE.put('admin:checkQuestion:index', String(questionIndex));
-                  
-                  const message = 
-                    `🎯 **JUMPED TO QUESTION ${simpleNumber} of ${totalQuestions}**\n\n` +
-                    `📝 **Question:** ${question.question}\n\n` +
-                    `A) ${question.options.A}\n` +
-                    `B) ${question.options.B}\n` +
-                    `C) ${question.options.C}\n` +
-                    `D) ${question.options.D}\n\n` +
-                    `✅ **Answer:** ${question.answer}\n` +
-                    `📖 **Explanation:** ${question.explanation}\n\n` +
-                    `🔍 **Verification:** Does answer "${question.answer}" match the explanation?`;
-                  
-                  const keyboard = {
-                    inline_keyboard: [
-                      [
-                        { text: '⬅️ Previous', callback_data: 'admin:checkQ:prev' },
-                        { text: '➡️ Next', callback_data: 'admin:checkQ:next' }
-                      ],
-                      [
-                        { text: '📝 Edit', callback_data: `admin:edit:${questionIndex}` },
-                        { text: '🗑️ Delete', callback_data: `admin:del:${questionIndex}` }
-                      ],
-                      [
-                        { text: '📤 Post Now', callback_data: `admin:postNow:${questionIndex}` }
-                      ],
-                      [
-                        { text: '✖️ Close', callback_data: 'admin:checkQ:close' }
-                      ]
-                    ]
-                  };
-                  
-                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, { reply_markup: keyboard });
-                  return new Response('OK');
-                } else {
-                  console.log(`❌ Fallback: Number ${simpleNumber} exceeds total questions ${totalQuestions}`);
-                }
-              }
+              // No fallback - only work when explicitly requested
               
               // Clear any pending edit states first
               await env.STATE.delete('admin:edit:idx');
@@ -1948,7 +1895,8 @@ export default {
                 '**Option 2: JSON File**\n' +
                 'Send a JSON file with questions array or JSONL format.\n\n' +
                 '**Option 3: CSV File**\n' +
-                'Send a CSV file with columns: question, A, B, C, D, answer, explanation');
+                'Send a CSV file with columns: question, A, B, C, D, answer, explanation\n\n' +
+                '💡 **Note:** Upload files or send text directly. No need to click any button first!');
               
           } else if (data === 'admin:daily') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
@@ -2215,6 +2163,14 @@ export default {
             const testState = await env.STATE.get('admin:jumpToQuestion:pending');
             console.log(`🧪 Test state after setting: ${testState}`);
             
+            const keyboard = {
+              inline_keyboard: [
+                [
+                  { text: '❌ Cancel Jump', callback_data: 'admin:jumpToQuestion:cancel' }
+                ]
+              ]
+            };
+            
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
               `🎯 **Jump to Question**\n\n` +
               `📊 Total questions in database: ${totalQuestions}\n\n` +
@@ -2223,8 +2179,14 @@ export default {
               `• Type \`5\` to jump to question 5\n` +
               `• Type \`${totalQuestions}\` to jump to the last question\n` +
               `• Type \`1\` to jump to the first question\n\n` +
-              `❌ **To cancel:** Type anything else or use another admin command.`
+              `❌ **To cancel:** Click "❌ Cancel Jump" or type anything else.`,
+              { reply_markup: keyboard }
             );
+
+          } else if (data === 'admin:jumpToQuestion:cancel') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
+            await env.STATE.delete('admin:jumpToQuestion:pending');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Jump to Question cancelled.');
 
           } else if (data === 'admin:manage') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
