@@ -1064,7 +1064,6 @@ export default {
                   [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
                   [{ text: stopButtonText, callback_data: 'admin:stopPosts' }],
-                  [{ text: '🔍 Check Data Integrity', callback_data: 'admin:checkDataIntegrity' }],
                   [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
@@ -1230,7 +1229,6 @@ export default {
                   [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
                   [{ text: stopButtonText, callback_data: 'admin:stopPosts' }],
-                  [{ text: '🔍 Check Data Integrity', callback_data: 'admin:checkDataIntegrity' }],
                   [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
