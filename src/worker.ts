@@ -1298,12 +1298,10 @@ export default {
               }
 
             } else if (message.text) {
-              // Clear any pending edit states first
-              await env.STATE.delete('admin:edit:idx');
-              
-              // Check if admin is trying to jump to a specific question
+              // Check if admin is trying to jump to a specific question FIRST
               const jumpPending = await env.STATE.get('admin:jumpToQuestion:pending');
               console.log(`🔍 Checking jumpToQuestion pending: ${jumpPending}`);
+              console.log(`🔍 Message text: "${message.text}"`);
               
               if (jumpPending === '1') {
                 console.log('✅ Jump to Question pending detected, processing input');
@@ -1365,6 +1363,9 @@ export default {
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, { reply_markup: keyboard });
                 return new Response('OK');
               }
+              
+              // Clear any pending edit states first
+              await env.STATE.delete('admin:edit:idx');
               
               // Admin free-text template upload - try multiple questions first
               const multipleQuestions = parseMultipleQuestions(message.text);
