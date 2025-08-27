@@ -170,6 +170,33 @@ async function sendMessage(token: string, chatId: string | number, text: string,
   }
 }
 
+async function editMessageText(token: string, chatId: string | number, messageId: number, text: string, options?: any): Promise<any> {
+  try {
+    console.log('editMessageText called:', { chatId, messageId, text: text.substring(0, 100) });
+    const url = `https://api.telegram.org/bot${token}/editMessageText`;
+    const body = {
+      chat_id: chatId,
+      message_id: messageId,
+      text: text,
+      parse_mode: 'HTML',
+      ...options
+    };
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    
+    const result = await response.json();
+    console.log('editMessageText result:', { ok: result.ok, status: response.status });
+    return result;
+  } catch (error) {
+    console.error('editMessageText error:', error);
+    throw error;
+  }
+}
+
 async function copyMessage(token: string, fromChatId: string | number, messageId: number, targetChatId: string | number, options?: any): Promise<any> {
   const url = `https://api.telegram.org/bot${token}/copyMessage`;
   const body = {
@@ -449,8 +476,8 @@ function formatQuestionPreview(q: Question, index: number): string {
   return `#${index + 1}\n\n${esc(q.question)}\n\nA) ${esc(q.options.A)}\nB) ${esc(q.options.B)}\nC) ${esc(q.options.C)}\nD) ${esc(q.options.D)}\n\nAnswer: ${q.answer}`;
 }
 
-async function showQuestionsPage(kv: KVNamespace, token: string, chatId: number, questions: Question[], page: number): Promise<void> {
-  console.log('showQuestionsPage called:', { page, totalQuestions: questions.length });
+async function showQuestionsPage(kv: KVNamespace, token: string, chatId: number, questions: Question[], page: number, messageId?: number): Promise<void> {
+  console.log('showQuestionsPage called:', { page, totalQuestions: questions.length, messageId });
   const questionsPerPage = 10;
   const startIndex = page * questionsPerPage;
   const endIndex = Math.min(startIndex + questionsPerPage, questions.length);
@@ -513,7 +540,13 @@ async function showQuestionsPage(kv: KVNamespace, token: string, chatId: number,
   // Add close button
   keyboard.push([{ text: '✖️ Close', callback_data: 'admin:listAll:close' }]);
   
-  await sendMessage(token, chatId, message, { reply_markup: { inline_keyboard: keyboard } });
+  if (messageId) {
+    // Edit existing message
+    await editMessageText(token, chatId, messageId, message, { reply_markup: { inline_keyboard: keyboard } });
+  } else {
+    // Send new message
+    await sendMessage(token, chatId, message, { reply_markup: { inline_keyboard: keyboard } });
+  }
 }
 
 async function handleDiscountButtonCreation(kv: KVNamespace, token: string, chatId: number, text: string, step: string): Promise<void> {
@@ -932,7 +965,7 @@ async function formatDailyReport(kv: KVNamespace, date: string): Promise<string>
   return report;
 }
 
-async function showQuestionNumberPage(kv: KVNamespace, token: string, chatId: string, page: number, totalQuestions: number): Promise<void> {
+async function showQuestionNumberPage(kv: KVNamespace, token: string, chatId: string, page: number, totalQuestions: number, messageId?: number): Promise<void> {
   const questionsPerPage = 20;
   const startQuestion = page * questionsPerPage + 1;
   const endQuestion = Math.min((page + 1) * questionsPerPage, totalQuestions);
@@ -974,7 +1007,13 @@ async function showQuestionNumberPage(kv: KVNamespace, token: string, chatId: st
   // Close button
   keyboard.push([{ text: '✖️ Close', callback_data: 'admin:jumpToQuestion:close' }]);
   
-  await sendMessage(token, chatId, message, { reply_markup: { inline_keyboard: keyboard } });
+  if (messageId) {
+    // Edit existing message
+    await editMessageText(token, chatId, messageId, message, { reply_markup: { inline_keyboard: keyboard } });
+  } else {
+    // Send new message
+    await sendMessage(token, chatId, message, { reply_markup: { inline_keyboard: keyboard } });
+  }
 }
 
 async function formatMonthlyReport(kv: KVNamespace, yyyyMM: string): Promise<string> {
@@ -2161,7 +2200,7 @@ export default {
             const page = parseInt(data.split(':')[2], 10);
             const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
             const totalQuestions = questions.length;
-            await showQuestionNumberPage(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId!, page, totalQuestions);
+            await showQuestionNumberPage(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId!, page, totalQuestions, query.message?.message_id);
 
           } else if (data.startsWith('admin:jumpTo:')) {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
@@ -2325,7 +2364,7 @@ export default {
               
               console.log('Saving page state:', currentPage, 'to key:', adminKey);
               await env.STATE.put(adminKey, String(currentPage));
-              await showQuestionsPage(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId!, questions, currentPage);
+              await showQuestionsPage(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId!, questions, currentPage, query.message?.message_id);
             }
           } else if (data.startsWith('admin:del:')) {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
