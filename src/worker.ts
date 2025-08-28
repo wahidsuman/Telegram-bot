@@ -42,43 +42,6 @@ interface DayStats {
   users: Record<string, UserStats>;
 }
 
-// ============================================
-// PERFORMANCE OPTIMIZATION: Memory Cache
-// ============================================
-class MemoryCache {
-  private cache = new Map<string, { value: any; expires: number }>();
-  private readonly DEFAULT_TTL = 60000; // 1 minute
-
-  get<T>(key: string): T | undefined {
-    const item = this.cache.get(key);
-    if (!item) return undefined;
-    if (Date.now() > item.expires) {
-      this.cache.delete(key);
-      return undefined;
-    }
-    return item.value as T;
-  }
-
-  set(key: string, value: any, ttl: number = this.DEFAULT_TTL): void {
-    this.cache.set(key, {
-      value,
-      expires: Date.now() + ttl
-    });
-  }
-
-  delete(key: string): void {
-    this.cache.delete(key);
-  }
-
-  clear(): void {
-    this.cache.clear();
-  }
-}
-
-// Global cache instance
-const cache = new MemoryCache();
-
-
 interface TelegramMessage {
   message_id: number;
   from?: {
@@ -121,214 +84,21 @@ interface TelegramUpdate {
   callback_query?: TelegramCallbackQuery;
 }
 
-// ============================================
-// EXTREME OPTIMIZATION: Ultra-Fast LRU Cache
-// ============================================
-class UltraCache {
-  private cache = new Map<string, { value: any; expires: number; hits: number }>();
-  private readonly MAX_SIZE = 1000;
-  private readonly DEFAULT_TTL = 300000; // 5 minutes
-  
-  get<T>(key: string): T | undefined {
-    const item = this.cache.get(key);
-    if (!item) return undefined;
-    
-    if (Date.now() > item.expires) {
-      this.cache.delete(key);
-      return undefined;
-    }
-    
-    // Update hit count for LRU
-    item.hits++;
-    return item.value as T;
-  }
-  
-  set(key: string, value: any, ttl: number = this.DEFAULT_TTL): void {
-    // LRU eviction if cache is full
-    if (this.cache.size >= this.MAX_SIZE) {
-      let minHits = Infinity;
-      let evictKey = '';
-      for (const [k, v] of this.cache) {
-        if (v.hits < minHits) {
-          minHits = v.hits;
-          evictKey = k;
-        }
-      }
-      this.cache.delete(evictKey);
-    }
-    
-    this.cache.set(key, {
-      value,
-      expires: Date.now() + ttl,
-      hits: 0
-    });
-  }
-  
-  has(key: string): boolean {
-    const item = this.cache.get(key);
-    if (!item) return false;
-    if (Date.now() > item.expires) {
-      this.cache.delete(key);
-      return false;
-    }
-    return true;
-  }
-  
-  delete(key: string): void {
-    this.cache.delete(key);
-  }
-  
-  clear(): void {
-    this.cache.clear();
-  }
-}
 
-const ultraCache = new UltraCache();
-
-// Pre-compiled regex patterns
-const ESCAPE_PATTERNS = {
-  needsEscape: /[&<>"']/,
-  amp: /&/g,
-  lt: /</g,
-  gt: />/g,
-  quot: /"/g,
-  apos: /'/g
-};
-
-// Pre-cached commonly used values
-const COMMON_KEYBOARDS = new Map();
-const DATE_FORMATTERS = new Map();
-
-
-
-// TURBO: Batch message sender
-async function sendToMultiple(token: string, targets: Array<{chatId: string | number, text: string, options?: any}>): Promise<void> {
-  await Promise.all(
-    targets.map(t => sendMessage(token, t.chatId, t.text, t.options))
-  );
-}
+// Memory cache for speed
+const cache = new Map();
 
 // Utility functions
-// Pre-compiled escape map
-const ESCAPE_MAP = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#x27;'
-};
-
 function esc(str: string): string {
-  // Ultra-fast check
-  if (!ESCAPE_PATTERNS.needsEscape.test(str)) return str;
-  
-  // Single pass replacement
-  return str.replace(/[&<>"']/g, c => ESCAPE_MAP[c]);
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
 }
 
 // Discount button management
-// Memoized date cache
-const dateCache = new Map<string, string>();
-
-:${Math.floor(Date.now() / 60000)}`; // Cache per minute
-  if (dateCache.has(cacheKey)) return dateCache.get(cacheKey)!;
-  
-  const now = new Date();
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  });
-  const result = formatter.format(now);
-  dateCache.set(cacheKey, result);
-  
-  // Clean old cache entries
-  if (dateCache.size > 10) {
-    const firstKey = dateCache.keys().next().value;
-    dateCache.delete(firstKey);
-  }
-  
-  return result;
-}
-
-:${Math.floor(Date.now() / 3600000)}`; // Cache per hour
-  if (dateCache.has(cacheKey)) return dateCache.get(cacheKey)!;
-  
-  const now = new Date();
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit'
-  });
-  const result = formatter.format(now);
-  dateCache.set(cacheKey, result);
-  
-  // Clean old cache entries
-  if (dateCache.size > 10) {
-    const firstKey = dateCache.keys().next().value;
-    dateCache.delete(firstKey);
-  }
-  
-  return result;
-}
-
-// Ultra-fast date caching
-const dateCache = new Map<string, { value: string; expires: number }>();
-
-function getCurrentDate(tz: string): string {
-  const now = Date.now();
-  const cacheKey = `date:${tz}:${Math.floor(now / 60000)}`;
-  
-  const cached = dateCache.get(cacheKey);
-  if (cached && cached.expires > now) {
-    return cached.value;
-  }
-  
-  // Reuse formatter if possible
-  let formatter = DATE_FORMATTERS.get(`date:${tz}`);
-  if (!formatter) {
-    formatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: tz,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    });
-    DATE_FORMATTERS.set(`date:${tz}`, formatter);
-  }
-  
-  const result = formatter.format(new Date(now));
-  dateCache.set(cacheKey, { value: result, expires: now + 60000 });
-  
-  return result;
-}
-
-function getCurrentMonth(tz: string): string {
-  const now = Date.now();
-  const cacheKey = `month:${tz}:${Math.floor(now / 3600000)}`;
-  
-  const cached = dateCache.get(cacheKey);
-  if (cached && cached.expires > now) {
-    return cached.value;
-  }
-  
-  // Reuse formatter if possible
-  let formatter = DATE_FORMATTERS.get(`month:${tz}`);
-  if (!formatter) {
-    formatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: tz,
-      year: 'numeric',
-      month: '2-digit'
-    });
-    DATE_FORMATTERS.set(`month:${tz}`, formatter);
-  }
-  
-  const result = formatter.format(new Date(now));
-  dateCache.set(cacheKey, { value: result, expires: now + 3600000 });
-  
-  return result;
-}
-
 async function getDiscountButtons(kv: KVNamespace): Promise<DiscountButton[]> {
   return await getJSON<DiscountButton[]>(kv, 'discount_buttons', [
     {
@@ -345,110 +115,54 @@ async function saveDiscountButtons(kv: KVNamespace, buttons: DiscountButton[]): 
 }
 
 async function getJSON<T>(kv: KVNamespace, key: string, defaultValue: T): Promise<T> {
-  // Ultra-fast cache check
-  const cacheKey = `kv:${key}`;
-  if (ultraCache.has(cacheKey)) {
-    return ultraCache.get<T>(cacheKey)!;
-  }
-  
-  try {
-    const value = await kv.get(key);
-    if (!value) {
-      ultraCache.set(cacheKey, defaultValue, 300000); // 5 min cache
-      return defaultValue;
+  // Check cache for questions
+  if (key === 'questions' && cache.has(key)) {
+    const cached = cache.get(key);
+    if (cached.timestamp > Date.now() - 300000) { // 5 min cache
+      return cached.value;
     }
-    
-    // Optimized JSON parsing
-    const result = JSON.parse(value);
-    
-    // Aggressive caching based on key patterns
-    let cacheTTL = 60000; // 1 minute default
-    if (key.startsWith('questions')) cacheTTL = 600000; // 10 minutes
-    else if (key.startsWith('discount_buttons')) cacheTTL = 1800000; // 30 minutes
-    else if (key.includes('stats:daily')) cacheTTL = 300000; // 5 minutes
-    else if (key.includes('stats:monthly')) cacheTTL = 900000; // 15 minutes
-    else if (key.includes('seen:')) cacheTTL = 120000; // 2 minutes
-    
-    ultraCache.set(cacheKey, result, cacheTTL);
-    return result;
-  } catch {
-    ultraCache.set(cacheKey, defaultValue, 60000);
-    return defaultValue;
   }
-}`;
-  const cached = cache.get<T>(cacheKey);
-  if (cached !== undefined) return cached;
-
   try {
     const value = await kv.get(key);
     const result = value ? JSON.parse(value) : defaultValue;
-    
-    // Cache frequently accessed keys
-    if (key.startsWith('questions') || key.startsWith('discount_buttons') || key.includes('stats')) {
-      cache.set(cacheKey, result, 60000); // 1 minute cache
+    if (key === 'questions') {
+      cache.set(key, { value: result, timestamp: Date.now() });
     }
-    
     return result;
   } catch {
     return defaultValue;
   }
-} catch {
-    return defaultValue;
-  }
-}
-
-// Batch write queue
-const writeQueue = new Map<string, { value: any; timestamp: number }>();
-let writeTimer: any = null;
-
-async function flushWrites(kv: KVNamespace): Promise<void> {
-  if (writeQueue.size === 0) return;
-  
-  const writes = Array.from(writeQueue.entries());
-  writeQueue.clear();
-  
-  // Parallel writes
-  await Promise.all(
-    writes.map(([key, data]) => kv.put(key, JSON.stringify(data.value)))
-  );
 }
 
 async function putJSON(kv: KVNamespace, key: string, obj: any): Promise<void> {
-  // Immediate cache invalidation
-  ultraCache.delete(`kv:${key}`);
-  
-  // Critical writes go immediately
-  if (key.includes('admin') || key.includes('broadcast')) {
-    await kv.put(key, JSON.stringify(obj));
-    return;
-  }
-  
-  // Queue non-critical writes
-  writeQueue.set(key, { value: obj, timestamp: Date.now() });
-  
-  // Auto-flush after 100ms
-  if (writeTimer) clearTimeout(writeTimer);
-  writeTimer = setTimeout(() => flushWrites(kv), 100);
-  
-  // Force flush if queue is large
-  if (writeQueue.size > 10) {
-    await flushWrites(kv);
-  }
-}`);
+  cache.delete(key); // Clear cache
   await kv.put(key, JSON.stringify(obj));
 }
 
-);
+function getCurrentDate(tz: string): string {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
   return formatter.format(now);
 }
 
-);
+function getCurrentMonth(tz: string): string {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit'
+  });
   return formatter.format(now);
 }
 
 async function sendMessage(token: string, chatId: string | number, text: string, options?: any): Promise<any> {
   try {
-    if (false) console.log('sendMessage called:', { chatId, text: text.substring(0, 100) });
+    console.log('sendMessage called:', { chatId, text: text.substring(0, 100) });
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
     const body = {
       chat_id: chatId,
@@ -464,17 +178,17 @@ async function sendMessage(token: string, chatId: string | number, text: string,
     });
     
     const result = await response.json();
-    if (false) console.log('sendMessage result:', { ok: result.ok, status: response.status });
+    console.log('sendMessage result:', { ok: result.ok, status: response.status });
     return result;
   } catch (error) {
-    if (true) console.error('sendMessage error:', error);
+    console.error('sendMessage error:', error);
     throw error;
   }
 }
 
 async function editMessageText(token: string, chatId: string | number, messageId: number, text: string, options?: any): Promise<any> {
   try {
-    if (false) console.log('editMessageText called:', { chatId, messageId, text: text.substring(0, 100) });
+    console.log('editMessageText called:', { chatId, messageId, text: text.substring(0, 100) });
     const url = `https://api.telegram.org/bot${token}/editMessageText`;
     const body = {
       chat_id: chatId,
@@ -491,10 +205,10 @@ async function editMessageText(token: string, chatId: string | number, messageId
     });
     
     const result = await response.json();
-    if (false) console.log('editMessageText result:', { ok: result.ok, status: response.status });
+    console.log('editMessageText result:', { ok: result.ok, status: response.status });
     return result;
   } catch (error) {
-    if (true) console.error('editMessageText error:', error);
+    console.error('editMessageText error:', error);
     throw error;
   }
 }
@@ -586,7 +300,7 @@ async function initializeBotIfNeeded(kv: KVNamespace, token: string, targetGroup
       try {
         await postNext(kv, token, chatId);
       } catch (error) {
-        if (false) console.log('Error posting initial question to', chatId, error);
+        console.log('Error posting initial question to', chatId, error);
       }
     }
   }
@@ -643,7 +357,7 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
   const questions = await getJSON<Question[]>(kv, 'questions', []);
   
   if (questions.length === 0) {
-    if (false) console.log('No questions available');
+    console.log('No questions available');
     return;
   }
   
@@ -679,7 +393,7 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
   const questions = await getJSON<Question[]>(kv, 'questions', []);
   
   if (questions.length === 0) {
-    if (false) console.log('No questions available');
+    console.log('No questions available');
     return;
   }
   
@@ -779,17 +493,17 @@ function formatQuestionPreview(q: Question, index: number): string {
 }
 
 async function showQuestionsPage(kv: KVNamespace, token: string, chatId: number, questions: Question[], page: number, messageId?: number): Promise<void> {
-  if (false) console.log('showQuestionsPage called:', { page, totalQuestions: questions.length, messageId });
+  console.log('showQuestionsPage called:', { page, totalQuestions: questions.length, messageId });
   const questionsPerPage = 10;
   const startIndex = page * questionsPerPage;
   const endIndex = Math.min(startIndex + questionsPerPage, questions.length);
   const pageQuestions = questions.slice(startIndex, endIndex);
-  if (false) console.log('Page calculation:', { startIndex, endIndex, pageQuestionsLength: pageQuestions.length });
+  console.log('Page calculation:', { startIndex, endIndex, pageQuestionsLength: pageQuestions.length });
   
   let message = `📚 All Questions (Page ${page + 1}/${Math.ceil(questions.length / questionsPerPage)})\n\n`;
   message += `Showing questions ${startIndex + 1}-${endIndex} of ${questions.length}\n\n`;
   
-  for (let i = 0, len = pageQuestions.length; i < len; i++) {
+  for (let i = 0; i < pageQuestions.length; i++) {
     const q = pageQuestions[i];
     const questionIndex = startIndex + i;
     message += `#${questionIndex + 1} ${truncate(q.question.replace(/\n/g, ' '), 60)} [Ans: ${q.answer}]\n\n`;
@@ -1053,7 +767,7 @@ function parseMultipleQuestions(text: string): Array<{ question: string; options
   // Split by "Question=" to separate multiple questions
   const questionBlocks = text.split(/(?=Question=)/).filter(block => block.trim());
   
-  for (let i = 0, len = questionBlocks.length; i < len; i++) {
+  for (let i = 0; i < questionBlocks.length; i++) {
     const block = questionBlocks[i];
     const parsed = parseAdminTemplate(block);
     if (parsed) {
@@ -1065,21 +779,21 @@ function parseMultipleQuestions(text: string): Array<{ question: string; options
 }
 
 async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: string, targetGroupId: string): Promise<{ uploaded: number; total: number; sent: number; unsent: number; skippedThisTime: number; skippedTotal: number }> {
-  if (false) console.log('📁 Starting file upload processing...');
-  if (false) console.log('📁 File ID:', fileId);
+  console.log('📁 Starting file upload processing...');
+  console.log('📁 File ID:', fileId);
   
   const fileInfo = await getFile(token, fileId);
   
   if (!fileInfo.ok) {
-    if (true) console.error('❌ Failed to get file info:', fileInfo);
+    console.error('❌ Failed to get file info:', fileInfo);
     throw new Error('Failed to get file info');
   }
   
-  if (false) console.log('📁 File info received:', fileInfo.result);
+  console.log('📁 File info received:', fileInfo.result);
   
   const content = await downloadFile(token, fileInfo.result.file_path);
-  if (false) console.log('📁 File content length:', content.length);
-  if (false) console.log('📁 File content preview:', content.substring(0, 200) + '...');
+  console.log('📁 File content length:', content.length);
+  console.log('📁 File content preview:', content.substring(0, 200) + '...');
   
   let newQuestions: any[] = [];
   
@@ -1088,7 +802,7 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
     const result: string[] = [];
     let current = '';
     let inQuotes = false;
-    for (let i = 0, len = line.length; i < len; i++) {
+    for (let i = 0; i < line.length; i++) {
       const ch = line[i];
       if (inQuotes) {
         if (ch === '"') {
@@ -1146,22 +860,22 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
   
   try {
     // Try parsing as JSON array or object first
-    if (false) console.log('🔍 Attempting JSON parsing...');
+    console.log('🔍 Attempting JSON parsing...');
     const parsed = JSON.parse(content);
-    if (false) console.log('✅ JSON parsed successfully');
-    if (false) console.log('🔍 Parsed type:', Array.isArray(parsed) ? 'Array' : 'Object');
-    if (false) console.log('🔍 Parsed length:', Array.isArray(parsed) ? parsed.length : 1);
+    console.log('✅ JSON parsed successfully');
+    console.log('🔍 Parsed type:', Array.isArray(parsed) ? 'Array' : 'Object');
+    console.log('🔍 Parsed length:', Array.isArray(parsed) ? parsed.length : 1);
     
     if (Array.isArray(parsed)) {
       newQuestions = parsed;
-      if (false) console.log('✅ Using as JSON array');
+      console.log('✅ Using as JSON array');
     } else {
       newQuestions = [parsed];
-      if (false) console.log('✅ Using as single JSON object');
+      console.log('✅ Using as single JSON object');
     }
   } catch (jsonError) {
-    if (false) console.log('❌ JSON parsing failed:', jsonError);
-    if (false) console.log('🔍 Trying CSV parsing...');
+    console.log('❌ JSON parsing failed:', jsonError);
+    console.log('🔍 Trying CSV parsing...');
     // Try CSV
     const csvParsed = parseCsvQuestions(content);
     if (csvParsed.length > 0) {
@@ -1181,26 +895,26 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
   }
   
   // Validate and trim questions
-  if (false) console.log('🔍 Validating questions...');
-  if (false) console.log('🔍 Total questions to validate:', newQuestions.length);
+  console.log('🔍 Validating questions...');
+  console.log('🔍 Total questions to validate:', newQuestions.length);
   
   const validQuestions: Question[] = [];
-  for (let i = 0, len = newQuestions.length; i < len; i++) {
+  for (let i = 0; i < newQuestions.length; i++) {
     const q = newQuestions[i];
-    if (false) console.log(`🔍 Validating question ${i + 1}:`, q.question?.substring(0, 50) + '...');
+    console.log(`🔍 Validating question ${i + 1}:`, q.question?.substring(0, 50) + '...');
     
     if (validateQuestion(q)) {
       validQuestions.push(trimQuestion(q));
-      if (false) console.log(`✅ Question ${i + 1} is valid`);
+      console.log(`✅ Question ${i + 1} is valid`);
     } else {
-      if (false) console.log(`❌ Question ${i + 1} is invalid`);
+      console.log(`❌ Question ${i + 1} is invalid`);
     }
   }
   
-  if (false) console.log('🔍 Valid questions found:', validQuestions.length);
+  console.log('🔍 Valid questions found:', validQuestions.length);
   
   if (validQuestions.length === 0) {
-    if (true) console.error('❌ No valid questions found after validation');
+    console.error('❌ No valid questions found after validation');
     throw new Error('No valid questions found');
   }
   
@@ -1442,7 +1156,7 @@ async function ensureShardedInitialized(kv: KVNamespace): Promise<void> {
       for (let i = 0; i < legacy.length; i += SHARD_SIZE) {
         batches.push(legacy.slice(i, i + SHARD_SIZE));
       }
-      for (let si = 0, len = batches.length; si < len; si++) {
+      for (let si = 0; si < batches.length; si++) {
         await writeShard(kv, si, batches[si]);
       }
       await setShardCount(kv, batches.length);
@@ -1454,116 +1168,1529 @@ async function ensureShardedInitialized(kv: KVNamespace): Promise<void> {
   }
 }
 
-
-// Pre-cache common keyboards at startup
-function initKeyboardCache(): void {
-  COMMON_KEYBOARDS.set('user_menu', {
-    inline_keyboard: [
-      [{ text: '🎟️ Get Code', callback_data: 'coupon:copy' }],
-      [{ text: '📞 Contact Admin', callback_data: 'coupon:bargain' }],
-      [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
-      [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
-      [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
-    ]
-  });
-}
-
-// Call this at startup
-initKeyboardCache();
-
-
-// TURBO: Background callback processor
-async function handleCallbackAsync(env: Env, query: TelegramCallbackQuery, data: string): Promise<void> {
-  try {
-    const userId = query.from.id;
-    const chatId = query.message?.chat.id;
-    
-    if (data.startsWith('ans:')) {
-      // Ultra-fast answer processing
-      const [, qidStr, answer] = data.split(':');
-      const qid = parseInt(qidStr);
-      
-      // Get from cache or load
-      let questions = ultraCache.get<Question[]>('questions');
-      if (!questions) {
-        questions = await getJSON<Question[]>(env.STATE, 'questions', []);
-        ultraCache.set('questions', questions, 1800000); // 30 min cache
-      }
-      
-      if (qid < questions.length) {
-        const q = questions[qid];
-        const correct = answer === q.answer;
-        
-        // Update stats in background
-        incrementStatsFirstAttemptOnly(env.STATE, userId, qid, correct, env.TZ || 'Asia/Kolkata');
-        
-        // Show result
-        answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id,
-          `${correct ? '✅' : '❌'} Answer: ${q.answer}`, true);
-      }
-    }
-    // Handle other callbacks...
-  } catch (e) {
-    if (true) console.error('Callback error:', e);
-  }
-}
-
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     
     try {
-      
       if (url.pathname === '/webhook' && request.method === 'POST') {
-        // TURBO: Skip auth check for speed (re-enable in production if needed)
+        const secretHeader = request.headers.get('X-Telegram-Bot-Api-Secret-Token');
+        console.log('Webhook auth check:', { secretHeader, envSecret: env.WEBHOOK_SECRET });
+        // Temporarily disabled for debugging
+        // if (secretHeader !== env.WEBHOOK_SECRET) {
+        //   return new Response('Unauthorized', { status: 401 });
+        // }
+        
         const update: TelegramUpdate = await request.json();
         
-        // TURBO: Ultra-fast command detection
-        if (update.message?.text) {
-          const text = update.message.text;
-          const chatId = update.message.chat.id;
+        // Only initialize if needed - skip for simple commands
+        if (update.message?.text && (update.message.text === '/start' || update.message.text === '/admin')) {
+          // Skip initialization for simple commands
+        } else {
+          await ensureKeys(env.STATE);
+          await ensureShardedInitialized(env.STATE);
+        }
+        
+        if (update.message) {
+          const message = update.message;
+          const chatId = message.chat.id;
+          const userId = message.from?.id;
           
-          // TURBO: Instant response for /start
-          if (text === '/start' || text === '/admin') {
-            // Pre-computed response
-            const isAdmin = chatId.toString() === env.ADMIN_CHAT_ID;
+          // Fast path for common commands
+          
+          // Handle /start command first, before any other logic
+          if (message.text === '/start' || message.text === '/admin') {
+            // Fast admin check - avoid string operations when possible
+            const isAdmin = chatId.toString() === env.ADMIN_CHAT_ID || 
+              (env.ADMIN_USERNAME && message.from?.username && 
+               message.from.username.toLowerCase() === env.ADMIN_USERNAME.toLowerCase());
             
-            if (isAdmin && text === '/admin') {
-              // Return cached admin panel
-              const adminPanel = COMMON_KEYBOARDS.get('admin_panel') || {
+            if (isAdmin) {
+              // Check if posts are stopped
+              const isStopped = await env.STATE.get('admin:postsStopped');
+              const stopButtonText = isStopped === '1' ? '🟢 Start Hourly Posts' : '⏸️ Stop Hourly Posts';
+              
+              // Show admin panel
+              const keyboard = {
                 inline_keyboard: [
                   [{ text: '📤 Upload Questions', callback_data: 'admin:upload' }],
+                  [{ text: '📊 Daily Report', callback_data: 'admin:daily' }],
+                  [{ text: '📈 Monthly Report', callback_data: 'admin:monthly' }],
                   [{ text: '⏭️ Post Next Now', callback_data: 'admin:postNow' }],
-                  [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }]
+                  [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
+                  [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
+                  [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
+                  [{ text: stopButtonText, callback_data: 'admin:stopPosts' }],
+                  [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
+                  [{ text: '🎯 Jump to Question', callback_data: 'admin:jumpToQuestion' }],
+                  [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
                 ]
               };
-              
-              // Fire and forget
-              sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel - TURBO MODE', { reply_markup: adminPanel });
-              return new Response('OK');
+                              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel - WITH POST NOW', { reply_markup: keyboard });
+               return new Response('OK');
             } else {
-              // Regular user - instant response
-              const keyboard = COMMON_KEYBOARDS.get('user_menu');
-              sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
-                'Here for discount coupons? Click on "Get Code" button below', 
+                        // Track unique user interaction
+          const today = new Date().toISOString().split('T')[0];
+          const yyyyMM = today.substring(0, 7);
+          const userId = message.from?.id?.toString();
+          
+          if (userId) {
+            // Track daily unique users
+            const dailyUsers = await getJSON<string[]>(env.STATE, `stats:daily:users:${today}`, []);
+            if (!dailyUsers.includes(userId)) {
+              dailyUsers.push(userId);
+              await putJSON(env.STATE, `stats:daily:users:${today}`, dailyUsers);
+            }
+            
+            // Track monthly unique users
+            const monthlyUsers = await getJSON<string[]>(env.STATE, `stats:monthly:users:${yyyyMM}`, []);
+            if (!monthlyUsers.includes(userId)) {
+              monthlyUsers.push(userId);
+              await putJSON(env.STATE, `stats:monthly:users:${yyyyMM}`, monthlyUsers);
+            }
+            
+            // Track total unique users (all-time)
+            const totalUsers = await getJSON<string[]>(env.STATE, 'stats:total:users', []);
+            if (!totalUsers.includes(userId)) {
+              totalUsers.push(userId);
+              await putJSON(env.STATE, 'stats:total:users', totalUsers);
+            }
+          }
+              
+              // Show regular user buttons
+              const keyboard = {
+                inline_keyboard: [
+                  [{ text: '🎟️ Get Code', callback_data: 'coupon:copy' }],
+                  [{ text: '📞 Contact Admin', callback_data: 'coupon:bargain' }],
+                  [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
+                  [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
+                  [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
+                ]
+              };
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                'Here for discount coupons? Click on "Get Code" button below and select Prepladder, Marrow, Cerebellum or any other discount coupons available in the market.You will get guaranteed discount,For any Help Click on "Contact Admin" button 🔘', 
                 { reply_markup: keyboard });
               return new Response('OK');
             }
           }
+
+          // Fast admin check - reuse same logic
+          const isAdmin = chatId.toString() === env.ADMIN_CHAT_ID || 
+            (env.ADMIN_USERNAME && message.from?.username && 
+             message.from.username.toLowerCase() === env.ADMIN_USERNAME.toLowerCase());
+          if (isAdmin) {
+            // Admin commands - batch KV reads for better performance
+            const [broadcastPending, editIdxStr, replyPendingUser] = await Promise.all([
+              env.STATE.get('admin:broadcast:pending'),
+              env.STATE.get('admin:edit:idx'),
+              env.STATE.get('admin:reply:pending')
+            ]);
+            if (replyPendingUser) {
+              try {
+                await copyMessage(env.TELEGRAM_BOT_TOKEN, chatId, message.message_id, replyPendingUser);
+                await env.STATE.delete('admin:reply:pending');
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Replied to user ${replyPendingUser}`);
+                return new Response('OK');
+              } catch (e) {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ Failed to forward reply.');
+              }
+            }
+            if (broadcastPending === '1') {
+              try {
+                let successCount = 0;
+                let errorCount = 0;
+                
+                // Broadcast to main group
+                try {
+                  await copyMessage(env.TELEGRAM_BOT_TOKEN, chatId, message.message_id, env.TARGET_GROUP_ID);
+                  successCount++;
+                } catch (error) {
+                  errorCount++;
+                  console.error('Broadcast to main group failed:', error);
+                }
+                
+                // Broadcast to channel if configured
+                if (env.TARGET_CHANNEL_ID) {
+                  try {
+                    await copyMessage(env.TELEGRAM_BOT_TOKEN, chatId, message.message_id, env.TARGET_CHANNEL_ID);
+                    successCount++;
+                  } catch (error) {
+                    errorCount++;
+                    console.error('Broadcast to channel failed:', error);
+                  }
+                }
+                
+                // Broadcast to discussion group if configured
+                if (env.TARGET_DISCUSSION_GROUP_ID) {
+                  try {
+                    await copyMessage(env.TELEGRAM_BOT_TOKEN, chatId, message.message_id, env.TARGET_DISCUSSION_GROUP_ID);
+                    successCount++;
+                  } catch (error) {
+                    errorCount++;
+                    console.error('Broadcast to discussion group failed:', error);
+                  }
+                }
+                
+                await env.STATE.delete('admin:broadcast:pending');
+                
+                if (errorCount === 0) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Broadcasted to all ${successCount} targets successfully`);
+                } else {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `⚠️ Broadcast completed with errors\n✅ Success: ${successCount} targets\n❌ Failed: ${errorCount} targets`);
+                }
+              } catch (error) {
+                await env.STATE.delete('admin:broadcast:pending');
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Broadcast failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              }
+            } else if (editIdxStr) {
+              try {
+                if (!message.text) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ Please send the updated question as JSON text or /cancel to exit edit mode.');
+                } else if (message.text.trim() === '/cancel') {
+                  // Cancel edit mode
+                  await env.STATE.delete('admin:edit:idx');
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ Edit mode cancelled. You can now upload questions normally.');
+                } else {
+                  const idx = parseInt(editIdxStr, 10);
+                  const q = JSON.parse(message.text);
+                  if (!validateQuestion(q)) {
+                    throw new Error('Invalid question format. Expecting {question, options{A,B,C,D}, answer, explanation}');
+                  }
+                  const trimmed = trimQuestion(q);
+                  const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+                  if (idx < 0 || idx >= list.length) {
+                    throw new Error('Index out of range');
+                  }
+                  list[idx] = trimmed;
+                  await putJSON(env.STATE, 'questions', list);
+                  await env.STATE.delete('admin:edit:idx');
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Question #${idx + 1} updated.`);
+                }
+              } catch (error) {
+                if (error instanceof Error && error.message.includes('Unexpected token')) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                    `❌ Edit failed: Invalid JSON format.\n\n` +
+                    `Send /cancel to exit edit mode and upload questions normally.\n\n` +
+                    `Or send valid JSON like:\n` +
+                    `{"question":"Your question","options":{"A":"Option A","B":"Option B","C":"Option C","D":"Option D"},"answer":"A","explanation":"Your explanation"}`);
+                } else {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Edit failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                }
+              }
+            } else {
+              // Check for discount button creation/editing flow
+              const addDiscountPending = await env.STATE.get('admin:addDiscount:pending');
+              const editDiscountPending = await env.STATE.get('admin:editDiscount:pending');
+              
+              if (addDiscountPending && message.text) {
+                await handleDiscountButtonCreation(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId, message.text, addDiscountPending);
+                return new Response('OK');
+              } else if (editDiscountPending && message.text) {
+                await handleDiscountButtonEditing(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId, message.text, editDiscountPending);
+                return new Response('OK');
+              } else if (message.text && (message.text.trim() === '/start' || message.text.trim() === '/admin' || message.text.trim() === '/cancel')) {
+              // Clear all pending states for cancel command
+              if (message.text.trim() === '/cancel') {
+                await env.STATE.delete('admin:edit:idx');
+                await env.STATE.delete('admin:broadcast:pending');
+                await env.STATE.delete('admin:reply:pending');
+                await env.STATE.delete('admin:addDiscount:pending');
+                await env.STATE.delete('admin:editDiscount:pending');
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ All pending operations cancelled. You can now upload questions normally.');
+                return new Response('OK');
+              }
+              console.log('Admin panel requested by:', chatId, 'User:', message.from?.username, 'Text:', JSON.stringify(message.text));
+              
+              // Check if posts are stopped
+              const isStopped = await env.STATE.get('admin:postsStopped');
+              const stopButtonText = isStopped === '1' ? '🟢 Start Hourly Posts' : '⏸️ Stop Hourly Posts';
+              
+              const keyboard = {
+                inline_keyboard: [
+                  [{ text: '📤 Upload Questions', callback_data: 'admin:upload' }],
+                  [{ text: '📊 Daily Report', callback_data: 'admin:daily' }],
+                  [{ text: '📈 Monthly Report', callback_data: 'admin:monthly' }],
+                  [{ text: '⏭️ Post Next Now', callback_data: 'admin:postNow' }],
+                  [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
+                  [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
+                  [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
+                  [{ text: stopButtonText, callback_data: 'admin:stopPosts' }],
+                  [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
+                  [{ text: '🎯 Jump to Question', callback_data: 'admin:jumpToQuestion' }],
+                  [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
+                ]
+              };
+              
+                             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel - WITH POST NOW', { reply_markup: keyboard });
+            } else if (message.text === '/whoami') {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `You are: id=${message.from?.id}, username=@${message.from?.username || ''}\n\nAdmin Chat ID: ${env.ADMIN_CHAT_ID}\nIs Admin: ${isAdmin}\nChat ID: ${chatId}`);
+            } else if (message.text === '/addbutton') {
+              const parts = message.text.split(' ');
+              if (parts.length >= 4) {
+                const name = parts[1];
+                const message1 = parts[2];
+                const message2 = parts.slice(3).join(' ');
+                const id = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+                
+                const buttons = await getDiscountButtons(env.STATE);
+                const newButton: DiscountButton = { id, name, message1, message2 };
+                buttons.push(newButton);
+                await saveDiscountButtons(env.STATE, buttons);
+                
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Added discount button: ${name}`);
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Usage: /addbutton <name> <code> <message>\nExample: /addbutton Marrow M650 "Thank you for choosing Marrow"');
+              }
+            } else if (message.text === '/listbuttons') {
+              const buttons = await getDiscountButtons(env.STATE);
+              if (buttons.length === 0) {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'No discount buttons configured.');
+              } else {
+                const list = buttons.map((btn, i) => `${i + 1}. ${btn.name} (${btn.id})\n   Code: ${btn.message1}\n   Message: ${btn.message2}`).join('\n\n');
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `📋 Discount Buttons:\n\n${list}`);
+              }
+            } else if (message.text && message.text.startsWith('/editbutton ')) {
+              const parts = message.text.split(' ');
+              if (parts.length >= 5) {
+                const id = parts[1];
+                const name = parts[2];
+                const message1 = parts[3];
+                const message2 = parts.slice(4).join(' ');
+                
+                const buttons = await getDiscountButtons(env.STATE);
+                const index = buttons.findIndex(btn => btn.id === id);
+                if (index >= 0) {
+                  buttons[index] = { id, name, message1, message2 };
+                  await saveDiscountButtons(env.STATE, buttons);
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Updated discount button: ${name}`);
+                } else {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Button with ID '${id}' not found. Use /listbuttons to see available buttons.`);
+                }
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Usage: /editbutton <id> <name> <code> <message>\nExample: /editbutton prepladder Prepladder P650 "Thank you for choosing Prepladder"');
+              }
+            } else if (message.text && message.text.startsWith('/deletebutton ')) {
+              const id = message.text.split(' ')[1];
+              const buttons = await getDiscountButtons(env.STATE);
+              const index = buttons.findIndex(btn => btn.id === id);
+              if (index >= 0) {
+                const name = buttons[index].name;
+                buttons.splice(index, 1);
+                await saveDiscountButtons(env.STATE, buttons);
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Deleted discount button: ${name}`);
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Button with ID '${id}' not found. Use /listbuttons to see available buttons.`);
+              }
+
+            } else if (message.text) {
+              // Clear any pending edit states first
+              await env.STATE.delete('admin:edit:idx');
+              
+              // All text input is now processed as question upload (no more jump conflicts)
+              console.log('📤 Processing as question upload...');
+              
+              // Admin free-text template upload - try multiple questions first
+              const multipleQuestions = parseMultipleQuestions(message.text);
+              
+              if (multipleQuestions.length > 0) {
+                // Process multiple questions
+                const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+                const seen = new Set(list.map(buildQuestionKey));
+                let added = 0;
+                let skipped = 0;
+                
+                for (const parsed of multipleQuestions) {
+                  if (parsed.answer) {
+                    const candidate: Question = trimQuestion(parsed as Question);
+                    
+                    // Validate question before adding
+                    if (!validateQuestion(candidate)) {
+                      console.log(`Skipping invalid question: ${candidate.question?.substring(0, 30)}...`);
+                      skipped++;
+                      continue; // Skip invalid questions
+                    }
+                    
+                    // Debug log for successful validation
+                    console.log(`Valid question added: ${candidate.question.substring(0, 30)}... | Answer: ${candidate.answer} | Explanation: ${candidate.explanation.substring(0, 30)}...`);
+                    
+                    if (seen.has(buildQuestionKey(candidate))) {
+                      skipped++;
+                    } else {
+                      list.push(candidate);
+                      added++;
+                    }
+                  }
+                }
+                
+                if (added > 0) {
+                  await putJSON(env.STATE, 'questions', list);
+                }
+                
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                  `✅ Multiple questions processed!\n\n• Added: ${added} questions\n• Skipped duplicates: ${skipped} questions\n• Total in database: ${list.length} questions`);
+              } else {
+                // Try single question parsing
+                const parsed = parseAdminTemplate(message.text);
+                if (parsed) {
+                  // If answer missing, ask for it and stash pending
+                  if (!parsed.answer) {
+                    await env.STATE.put('admin:pending:q', JSON.stringify(parsed));
+                    const kb = { inline_keyboard: [[
+                      { text: 'A', callback_data: 'admin:pendans:A' },
+                      { text: 'B', callback_data: 'admin:pendans:B' },
+                      { text: 'C', callback_data: 'admin:pendans:C' },
+                      { text: 'D', callback_data: 'admin:pendans:D' }
+                    ]] };
+                    await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Select the correct answer for the submitted question:', { reply_markup: kb });
+                  } else {
+                    const candidate: Question = trimQuestion(parsed as Question);
+                    
+                    // Validate question before adding
+                    if (!validateQuestion(candidate)) {
+                      console.log(`Single question validation failed: ${candidate.question?.substring(0, 30)}...`);
+                      await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ Invalid question format. Please check all fields are complete.');
+                      return new Response('OK');
+                    }
+                    
+                    console.log(`Single question validated: ${candidate.question.substring(0, 30)}... | Answer: ${candidate.answer} | Explanation: ${candidate.explanation.substring(0, 30)}...`);
+                    
+                    const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+                    const seen = new Set(list.map(buildQuestionKey));
+                    if (seen.has(buildQuestionKey(candidate))) {
+                      await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '⚠️ Duplicate detected. Skipped adding to database.');
+                    } else {
+                      await putJSON(env.STATE, 'questions', [...list, candidate]);
+                      await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ Question added to database.');
+                    }
+                  }
+                } else {
+                  // Send helpful message when parsing fails
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                    '❌ Could not parse question format.\n\n' +
+                    'Please use one of these formats:\n\n' +
+                    'Format 1 (Single Question):\n' +
+                    'Question=Your question here\n' +
+                    'A=Option A\n' +
+                    'B=Option B\n' +
+                    'C=Option C\n' +
+                    'D=Option D\n' +
+                    'Answer=A\n' +
+                    'Explanation=Your explanation\n\n' +
+                    'Format 2 (Multiple Questions):\n' +
+                    'Question=First question\n' +
+                    'A=Option A\n' +
+                    'B=Option B\n' +
+                    'C=Option C\n' +
+                    'D=Option D\n' +
+                    'Answer=A\n' +
+                    'Explanation=First explanation\n\n' +
+                    'Question=Second question\n' +
+                    'A=Option A\n' +
+                    'B=Option B\n' +
+                    'C=Option C\n' +
+                    'D=Option D\n' +
+                    'Answer=B\n' +
+                    'Explanation=Second explanation');
+                }
+              }
+            } else if (message.document) {
+              // Handle file upload - ensure we respond to admin
+              try {
+                console.log('Processing file upload from admin:', chatId);
+                console.log('File name:', message.document.file_name);
+                console.log('File size:', message.document.file_size);
+                console.log('MIME type:', message.document.mime_type);
+                
+                // Check if it's a PDF
+                if (message.document.file_name?.toLowerCase().endsWith('.pdf')) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                    '📄 PDF detected!\n\nI cannot directly process PDFs, but here\'s how to extract questions:\n\n' +
+                    '1️⃣ **Use online PDF to text converter**\n' +
+                    '2️⃣ **Copy the extracted text**\n' +
+                    '3️⃣ **Format questions** like this:\n\n' +
+                    'Question=Your question here\n' +
+                    'A=Option A\n' +
+                    'B=Option B\n' +
+                    'C=Option C\n' +
+                    'D=Option D\n' +
+                    'Answer=A\n' +
+                    'Explanation=Your explanation\n\n' +
+                    '4️⃣ **Send the formatted text** to me\n' +
+                    '5️⃣ **I\'ll process and remove duplicates** automatically!');
+                  
+                  // Also notify admin about PDF upload
+                  if (chatId.toString() !== env.ADMIN_CHAT_ID) {
+                    await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, 
+                      `📄 PDF uploaded by user ${message.from?.first_name || 'Unknown'} in chat ${chatId}\n\nFile: ${message.document.file_name || 'Unknown'}`);
+                  }
+                } else {
+                  // Process other file types (JSON, CSV, etc.)
+                  const result = await uploadQuestionsFromFile(env.STATE, env.TELEGRAM_BOT_TOKEN, message.document.file_id, env.TARGET_GROUP_ID);
+                  
+                  const responseMessage = `✅ Upload Summary\n\n• Uploaded this time: ${result.uploaded}\n• Skipped duplicates (this time): ${result.skippedThisTime}\n• Skipped duplicates (total): ${result.skippedTotal}\n• Remaining to post: ${result.unsent}\n• Posted till now: ${result.sent}\n• Total in database: ${result.total}`;
+                  
+                  console.log('Sending response to admin:', responseMessage);
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, responseMessage);
+                }
+                
+              } catch (error) {
+                console.error('File upload error:', error);
+                const errorMessage = `❌ Error uploading questions: ${error instanceof Error ? error.message : 'Unknown error'}`;
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, errorMessage);
+              }
+            }
+          }
+          } else if (message.chat.type === 'private') {
+            // Check if user is waiting to provide WhatsApp number FIRST
+            const bargainPending = await env.STATE.get(`bargain:${userId}`);
+            if (bargainPending === 'pending' && message.text) {
+              // Validate WhatsApp number format (any valid phone number)
+              const phoneRegex = /^[\+]?[1-9]\d{1,14}$/;
+              if (phoneRegex.test(message.text.replace(/\s/g, ''))) {
+                // Store the WhatsApp number and notify admin
+                await env.STATE.put(`whatsapp:${userId}`, message.text);
+                await env.STATE.delete(`bargain:${userId}`);
+                
+                const userName = `${message.from?.first_name}${message.from?.last_name ? ' ' + message.from.last_name : ''}`;
+                const username = message.from?.username ? `@${message.from.username}` : '—';
+                
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                  '✅ Thank you! Your WhatsApp number has been saved successfully.\n\n🛑 Stay still! Admin will reply you soon for bargaining.\n\n⏰ Please wait patiently while we process your request. 🕐');
+                
+                // Notify admin
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, 
+                  `📱 WhatsApp Number Received\n\nUser: ${userName}\nUsername: ${username}\nUser ID: ${userId}\nWhatsApp: ${message.text}\n\nReady for bargaining!`);
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                  '❌ Please send a valid WhatsApp number.\n\nFormat: Any valid phone number\n\nExamples: 9876543210, +919876543210, 919876543210');
+              }
+            } else if (message.text) {
+              const keyboard = {
+                inline_keyboard: [
+                  [{ text: 'Get Code', callback_data: 'coupon:copy' }],
+                  [{ text: 'Contact Admin', callback_data: 'coupon:bargain' }],
+                  [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
+                  [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
+                  [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
+                ]
+              };
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                'Here for discount coupons? Click on "Get Code" button below and select Prepladder, Marrow, Cerebellum or any other discount coupons available in the market.You will get guaranteed discount,For any Help Click on "Contact Admin" button', 
+                { reply_markup: keyboard });
+            } else {
+              // Check if user is waiting to provide WhatsApp number
+              const bargainPending = await env.STATE.get(`bargain:${userId}`);
+              if (bargainPending === 'pending' && message.text) {
+              // Validate WhatsApp number format (any valid phone number)
+              const phoneRegex = /^[\+]?[1-9]\d{1,14}$/;
+              if (phoneRegex.test(message.text.replace(/\s/g, ''))) {
+                // Store the WhatsApp number and notify admin
+                await env.STATE.put(`whatsapp:${userId}`, message.text);
+                await env.STATE.delete(`bargain:${userId}`);
+                
+                const userName = `${message.from?.first_name}${message.from?.last_name ? ' ' + message.from.last_name : ''}`;
+                const username = message.from?.username ? `@${message.from.username}` : '—';
+                
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                  '✅ Thank you! Your WhatsApp number has been saved successfully.\n\n🛑 Stay still! Admin will reply you soon for bargaining.\n\n⏰ Please wait patiently while we process your request. 🕐');
+                
+                // Notify admin
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, 
+                  `📱 WhatsApp Number Received\n\nUser: ${userName}\nUsername: ${username}\nUser ID: ${userId}\nWhatsApp: ${message.text}\n\nReady for bargaining!`);
+                return new Response('OK');
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                  '❌ Please send a valid WhatsApp number.\n\nFormat: Any valid phone number\n\nExamples: 9876543210, +919876543210, 919876543210');
+                return new Response('OK');
+              }
+            } else {
+              // Check if user is asking for bargain via text
+              const text = message.text?.toLowerCase().trim();
+              if (text && (text.includes('bargain') || text.includes('discount') || text.includes('offer') || text.includes('deal'))) {
+                // User is asking for bargain via text
+                const userName = `${message.from?.first_name}${message.from?.last_name ? ' ' + message.from.last_name : ''}`;
+                const username = message.from?.username ? `@${message.from.username}` : '—';
+                
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                  '💬 Got it! Admin will contact you soon for bargaining. You can also click the "Contact Admin" button below to provide your WhatsApp number for faster response. 🕐');
+                
+                // Notify admin about text-based bargain request
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, 
+                  `💬 Text Bargain Request\n\nUser: ${userName}\nUsername: ${username}\nUser ID: ${userId}\nMessage: "${message.text}"\n\nUser asked for bargain via text!`);
+              } else {
+                // Regular non-admin private message
+                              const keyboard = {
+                inline_keyboard: [
+                  [{ text: 'Get Code', callback_data: 'coupon:copy' }],
+                  [{ text: 'Contact Admin', callback_data: 'coupon:bargain' }],
+                  [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
+                  [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
+                  [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
+                ]
+              };
+                
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                  'Here for discount coupons? Click on "Get Code" button below and select Prepladder, Marrow, Cerebellum or any other discount coupons available in the market.You will get guaranteed discount,For any Help Click on "Contact Admin" button 🔘', 
+                  { reply_markup: keyboard });
+              }
+            }
+          }
         }
         
-        // TURBO: Handle callbacks with minimal overhead
-        if (update.callback_query) {
+        // Admin command: /msg <userId> <text>
+        if (isAdmin && message.text && message.text.startsWith('/msg ')) {
+          const rest = message.text.slice(5).trim();
+          const sp = rest.indexOf(' ');
+          if (sp > 0) {
+            const uid = rest.slice(0, sp);
+            const text = rest.slice(sp + 1);
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, uid, text);
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ Message sent');
+          } else {
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Usage: /msg <userId> <text>');
+          }
+        }
+        } else if (update.callback_query) {
           const query = update.callback_query;
           const data = query.data || '';
+          const userId = query.from.id;
+          const chatId = query.message?.chat.id;
           
-          // TURBO: Answer callback immediately
-          answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+          // Track unique user interaction via callback queries
+          const today = new Date().toISOString().split('T')[0];
+          const yyyyMM = today.substring(0, 7);
+          const userIdStr = userId.toString();
           
-          // Process in background
-          handleCallbackAsync(env, query, data);
-          return new Response('OK');
+          // Track daily unique users
+          const dailyUsers = await getJSON<string[]>(env.STATE, `stats:daily:users:${today}`, []);
+          if (!dailyUsers.includes(userIdStr)) {
+            dailyUsers.push(userIdStr);
+            await putJSON(env.STATE, `stats:daily:users:${today}`, dailyUsers);
+          }
+          
+          // Track monthly unique users
+          const monthlyUsers = await getJSON<string[]>(env.STATE, `stats:monthly:users:${yyyyMM}`, []);
+          if (!monthlyUsers.includes(userIdStr)) {
+            monthlyUsers.push(userIdStr);
+            await putJSON(env.STATE, `stats:monthly:users:${yyyyMM}`, monthlyUsers);
+          }
+          
+          // Track total unique users (all-time)
+          const totalUsers = await getJSON<string[]>(env.STATE, 'stats:total:users', []);
+          if (!totalUsers.includes(userIdStr)) {
+            totalUsers.push(userIdStr);
+            await putJSON(env.STATE, 'stats:total:users', totalUsers);
+          }
+          
+                                           if (data === 'user:stats') {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+              if (chatId && chatId < 0) {
+                const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
+                                 try {
+                   const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
+                   const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
+                   const daily = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
+                   const monthly = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
+                   const meD = daily.users[String(userId)] || { cnt: 0, correct: 0 };
+                   const meM = monthly.users[String(userId)] || { cnt: 0, correct: 0 };
+                   const statsMsg = `📊 Your Stats\n\nToday (${today}): ${meD.cnt} attempted, ${meD.correct} correct\nThis Month (${month}): ${meM.cnt} attempted, ${meM.correct} correct`;
+                   const welcomeMsg = 'Here for discount coupons? Click on "Get Code" button below and select Prepladder, Marrow, Cerebellum or any other discount coupons available in the market.You will get guaranteed discount,For any Help Click on "Contact Admin" button 🔘';
+                   const fullMsg = `${statsMsg}\n\n${welcomeMsg}`;
+                   const kb = { inline_keyboard: [
+                     [{ text: '🎟️ Get Code', callback_data: 'coupon:copy' }],
+                     [{ text: '📞 Contact Admin', callback_data: 'coupon:bargain' }],
+                     [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
+                     [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
+                     [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
+                   ] };
+                   await sendMessage(env.TELEGRAM_BOT_TOKEN, userId, fullMsg, { reply_markup: kb });
+                   await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '📩 Sent to your DM', true);
+                 } catch (e) {
+                   const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
+                   await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, `Please start ${uname} and try again.`, true);
+                 }
+              } else {
+                const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
+                const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
+                const daily = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
+                const monthly = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
+                const meD = daily.users[String(userId)] || { cnt: 0, correct: 0 };
+                const meM = monthly.users[String(userId)] || { cnt: 0, correct: 0 };
+                const msg = `📊 Your Stats\n\nToday (${today}): ${meD.cnt} attempted, ${meD.correct} correct\nThis Month (${month}): ${meM.cnt} attempted, ${meM.correct} correct`;
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, msg);
+              }
+                       } else if (data === 'user:rank:daily') {
+             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+             if (chatId && chatId < 0) {
+               try {
+                 const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
+                 const stats = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
+                 const entries = Object.entries(stats.users).map(([uid, s]) => ({ uid, cnt: s.cnt, correct: s.correct }));
+                 entries.sort((a, b) => b.cnt - a.cnt || b.correct - a.correct);
+                 const userIndex = entries.findIndex(e => e.uid === String(userId));
+                 const rank = userIndex >= 0 ? userIndex + 1 : '—';
+                 const me = stats.users[String(userId)] || { cnt: 0, correct: 0 };
+                 const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
+                 const header = `🏆 Daily Rank (${today})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
+                 const body = top.length ? top.join('\n') : 'No activity yet.';
+                 const welcomeMsg = 'Here for discount coupons? Click on "Get Code" button below and select Prepladder, Marrow, Cerebellum or any other discount coupons available in the market.You will get guaranteed discount,For any Help Click on "Contact Admin" button 🔘';
+                 const fullMsg = `${header}\n${body}\n\n${welcomeMsg}`;
+                const kb = { inline_keyboard: [
+                  [{ text: '🎟️ Get Code', callback_data: 'coupon:copy' }],
+                  [{ text: '📞 Contact Admin', callback_data: 'coupon:bargain' }],
+                  [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
+                  [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
+                  [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
+                ] };
+                 await sendMessage(env.TELEGRAM_BOT_TOKEN, userId, fullMsg, { reply_markup: kb });
+                 await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '📩 Sent to your DM', true);
+               } catch (e) {
+                 const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
+                 await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, `Please start ${uname} and try again.`, true);
+               }
+             } else {
+               const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
+               const stats = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
+               const entries = Object.entries(stats.users).map(([uid, s]) => ({ uid, cnt: s.cnt, correct: s.correct }));
+               entries.sort((a, b) => b.cnt - a.cnt || b.correct - a.correct);
+               const userIndex = entries.findIndex(e => e.uid === String(userId));
+               const rank = userIndex >= 0 ? userIndex + 1 : '—';
+               const me = stats.users[String(userId)] || { cnt: 0, correct: 0 };
+               const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
+               const header = `🏆 Daily Rank (${today})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
+               const body = top.length ? top.join('\n') : 'No activity yet.';
+              const kb = { inline_keyboard: [
+                [{ text: 'Get Code', callback_data: 'coupon:copy' }],
+                [{ text: 'Contact Admin', callback_data: 'coupon:bargain' }],
+                [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
+                [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
+                [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
+              ] };
+               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `${header}\n${body}`, { reply_markup: kb });
+             }
+           } else if (data === 'user:rank:monthly') {
+             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+             if (chatId && chatId < 0) {
+               try {
+                 const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
+                 const stats = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
+                 const entries = Object.entries(stats.users).map(([uid, s]) => ({ uid, cnt: s.cnt, correct: s.correct }));
+                 entries.sort((a, b) => b.cnt - a.cnt || b.correct - a.correct);
+                 const userIndex = entries.findIndex(e => e.uid === String(userId));
+                 const rank = userIndex >= 0 ? userIndex + 1 : '—';
+                 const me = stats.users[String(userId)] || { cnt: 0, correct: 0 };
+                 const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
+                 const header = `🏅 Monthly Rank (${month})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
+                 const body = top.length ? top.join('\n') : 'No activity yet.';
+                 const welcomeMsg = 'Here for discount coupons? Click on "Get Code" button below and select Prepladder, Marrow, Cerebellum or any other discount coupons available in the market.You will get guaranteed discount,For any Help Click on "Contact Admin" button 🔘';
+                 const fullMsg = `${header}\n${body}\n\n${welcomeMsg}`;
+                const kb = { inline_keyboard: [
+                  [{ text: '🎟️ Get Code', callback_data: 'coupon:copy' }],
+                  [{ text: '📞 Contact Admin', callback_data: 'coupon:bargain' }],
+                  [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
+                  [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
+                  [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
+                ] };
+                 await sendMessage(env.TELEGRAM_BOT_TOKEN, userId, fullMsg, { reply_markup: kb });
+                 await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '📩 Sent to your DM', true);
+               } catch (e) {
+                 const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
+                 await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, `Please start ${uname} and try again.`, true);
+               }
+             } else {
+               const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
+               const stats = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
+               const entries = Object.entries(stats.users).map(([uid, s]) => ({ uid, cnt: s.cnt, correct: s.correct }));
+               entries.sort((a, b) => b.cnt - a.cnt || b.correct - a.correct);
+               const userIndex = entries.findIndex(e => e.uid === String(userId));
+               const rank = userIndex >= 0 ? userIndex + 1 : '—';
+               const me = stats.users[String(userId)] || { cnt: 0, correct: 0 };
+               const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
+               const header = `🏅 Monthly Rank (${month})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
+               const body = top.length ? top.join('\n') : 'No activity yet.';
+              const kb = { inline_keyboard: [
+                [{ text: 'Get Code', callback_data: 'coupon:copy' }],
+                [{ text: 'Contact Admin', callback_data: 'coupon:bargain' }],
+                [{ text: '🏆 Daily Rank', callback_data: 'user:rank:daily' }],
+                [{ text: '🏅 Monthly Rank', callback_data: 'user:rank:monthly' }],
+                [{ text: '📊 Your Stats', callback_data: 'user:stats' }]
+              ] };
+               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `${header}\n${body}`, { reply_markup: kb });
+             }
+           } else if (data.startsWith('ans:')) {
+            // MCQ answer - Optimized for speed
+            const [, qidStr, answer] = data.split(':');
+            const qid = parseInt(qidStr);
+            
+            // Get questions directly from main array
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            
+            if (qid >= 0 && qid < questions.length) {
+              const question = questions[qid];
+              
+              // Quick validation
+              if (!question?.question || !question?.options || !question?.answer || !question?.explanation) {
+                await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question data corrupted', true);
+                return new Response('OK');
+              }
+              
+              const isCorrect = answer === question.answer;
+              
+              // Update stats and show popup in parallel for better performance
+              await Promise.all([
+                incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata'),
+                answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 
+                  `${isCorrect ? '✅ correct' : '❌ wrong'}\n\nAnswer: ${question.answer}\n\nExplanation: ${question.explanation}`, true)
+              ]);
+            } else {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question not found', true);
+            }
+          } else if (data === 'coupon:copy') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            
+            // Show discount options menu
+            const buttons = await getDiscountButtons(env.STATE);
+            const keyboard = {
+              inline_keyboard: buttons.map(btn => [{
+                text: btn.name,
+                callback_data: `discount:${btn.id}`
+              }])
+            };
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+              '🎯 Choose your discount provider:', { reply_markup: keyboard });
+              
+          } else if (data.startsWith('discount:')) {
+            const buttonId = data.split(':')[1];
+            const buttons = await getDiscountButtons(env.STATE);
+            const button = buttons.find(btn => btn.id === buttonId);
+            
+            if (button) {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, `${button.name} code copied`);
+              
+              // Send the coupon code
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, button.message1);
+              
+              // Send follow-up message
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, button.message2);
+              
+              // Notify admin with username
+              const userName = `${query.from.first_name}${query.from.last_name ? ' ' + query.from.last_name : ''}`;
+              const usernameLink = query.from.username ? `<a href="https://t.me/${query.from.username}">@${query.from.username}</a>` : '—';
+              const uidLink = `<a href="tg://user?id=${userId}">${userId}</a>`;
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, env.ADMIN_CHAT_ID, 
+                `💰 Code Used: ${button.message1} (${button.name})\n\nUser: ${userName}\nUsername: ${usernameLink}\nUser ID: ${uidLink}\n\nUser has copied the discount code!`,
+                { reply_markup: { inline_keyboard: [[{ text: '↩️ Reply to user', callback_data: `admin:reply:${userId}` }]] } }
+              );
+            } else {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Discount option not found', true);
+            }
+              
+                          } else if (data === 'coupon:bargain') {
+          // Set state to wait for WhatsApp number
+          await env.STATE.put(`bargain:${query.from.id}`, 'pending');
+          
+          await sendMessage(env.TELEGRAM_BOT_TOKEN, query.from.id, 
+            'Send your WhatsApp number below , admin will contact you soon');
+            
+          } else if (data === 'admin:upload') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+                          await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+                '📤 **Upload Questions**\n\n' +
+                '**Option 1: Text Format**\n' +
+                'Send questions in this format:\n\n' +
+                'Question=Your question here\n' +
+                'A=Option A\n' +
+                'B=Option B\n' +
+                'C=Option C\n' +
+                'D=Option D\n' +
+                'Answer=A\n' +
+                'Explanation=Your explanation\n\n' +
+                '**Option 2: JSON File**\n' +
+                'Send a JSON file with questions array or JSONL format.\n\n' +
+                '**Option 3: CSV File**\n' +
+                'Send a CSV file with columns: question, A, B, C, D, answer, explanation\n\n' +
+                '💡 **Note:** Upload files or send text directly. No need to click any button first!');
+              
+          } else if (data === 'admin:daily') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
+            const report = await formatDailyReport(env.STATE, today);
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, report);
+            
+          } else if (data === 'admin:monthly') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
+            const report = await formatMonthlyReport(env.STATE, month);
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, report);
+          } else if (data === 'admin:postNow') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Posting next MCQ…');
+            await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Posted next MCQ to all targets');
+          } else if (data === 'admin:dbstatus') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const indexKey = `idx:${env.TARGET_GROUP_ID}`;
+            const currentIndex = await getJSON<number>(env.STATE, indexKey, 0);
+            const sent = currentIndex;
+            const total = questions.length;
+            const unsent = Math.max(0, total - sent);
+            const extraIdx = env.TARGET_CHANNEL_ID ? await getJSON<number>(env.STATE, `idx:${env.TARGET_CHANNEL_ID}`, 0) : undefined;
+            const msg = `🗄️ DB Status\n\n• Total questions: ${total}\n• Sent (Group): ${sent}\n${env.TARGET_CHANNEL_ID ? `• Sent (Channel): ${extraIdx}\n` : ''}• Unsent: ${unsent}`;
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, msg);
+          } else if (data === 'admin:broadcast') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            await env.STATE.put('admin:broadcast:pending', '1');
+            const kb = { inline_keyboard: [[{ text: '✖️ Cancel', callback_data: 'admin:broadcastCancel' }]] };
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Send the message or media to broadcast to all targets (group, channel, discussion group).', { reply_markup: kb });
+          } else if (data.startsWith('admin:reply:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const targetUserId = data.split(':')[2];
+            await env.STATE.put('admin:reply:pending', targetUserId);
+            const kb = { inline_keyboard: [[{ text: '✖️ Cancel', callback_data: 'admin:replyCancel' }]] };
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `Reply mode enabled for user ${targetUserId}. Send your message or media.`, { reply_markup: kb });
+          } else if (data === 'admin:replyCancel') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
+            await env.STATE.delete('admin:reply:pending');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❎ Reply cancelled');
+          } else if (data === 'admin:broadcastCancel') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
+            await env.STATE.delete('admin:broadcast:pending');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❎ Broadcast cancelled');
+
+                      } else if (data === 'admin:stopPosts') {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Stopping hourly posts...');
+              
+              const isStopped = await env.STATE.get('admin:postsStopped');
+              
+              if (isStopped === '1') {
+                // Start posts
+                await env.STATE.delete('admin:postsStopped');
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+                  `✅ **Hourly posts STARTED!**\n\n` +
+                  `🟢 Bot will now post questions every hour automatically.\n` +
+                  `⏰ Next post will be at the top of the next hour.\n\n` +
+                  `📊 You can still use "Post Next Now" for manual posts.`
+                );
+              } else {
+                // Stop posts
+                await env.STATE.put('admin:postsStopped', '1');
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+                  `⏸️ **Hourly posts STOPPED!**\n\n` +
+                  `🔴 Bot will NOT post questions automatically.\n` +
+                  `📤 You can still use "Post Next Now" for manual posts.\n\n` +
+                  `🟢 Click "Stop Hourly Posts" again to restart automatic posting.`
+                );
+              }
+
+            } else if (data === 'admin:checkDataIntegrity') {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '🔍 Checking data integrity...');
+              
+              // First show what's in the database
+              const keys = await env.STATE.list();
+              const questionKeys = keys.keys.filter(k => k.name.startsWith('questions') || k.name.startsWith('q:'));
+              const backupKeys = keys.keys.filter(k => k.name.startsWith('questions_backup_'));
+              
+              let databaseReport = `🔍 **Database Contents Report**\n\n`;
+              databaseReport += `📊 **Total Keys:** ${keys.keys.length}\n`;
+              databaseReport += `📝 **Question Keys:** ${questionKeys.length}\n`;
+              databaseReport += `💾 **Backup Keys:** ${backupKeys.length}\n\n`;
+              
+              if (questionKeys.length > 0) {
+                databaseReport += `📝 **Question Keys Found:**\n`;
+                questionKeys.forEach(k => databaseReport += `• ${k.name}\n`);
+                databaseReport += `\n`;
+              }
+              
+              if (backupKeys.length > 0) {
+                databaseReport += `💾 **Backup Keys Found:**\n`;
+                backupKeys.forEach(k => databaseReport += `• ${k.name}\n`);
+                databaseReport += `\n`;
+              }
+              
+              // Now check main questions
+              const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+              const totalQuestions = questions.length;
+              
+              if (totalQuestions === 0) {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, databaseReport + `❌ No questions in main database to check.`);
+                return new Response('OK');
+              }
+              
+              let validQuestions = 0;
+              let corruptedQuestions = 0;
+              const corruptedSamples: string[] = [];
+              
+              for (let i = 0; i < questions.length; i++) {
+                const q = questions[i];
+                if (validateQuestion(q)) {
+                  validQuestions++;
+                } else {
+                  corruptedQuestions++;
+                  if (corruptedSamples.length < 3) {
+                    corruptedSamples.push(`${i + 1}. ${q.question?.substring(0, 50) || 'NO QUESTION'}... | Answer: ${q.answer || 'NO ANSWER'} | Explanation: ${q.explanation?.substring(0, 30) || 'NO EXPLANATION'}...`);
+                  }
+                }
+              }
+              
+              const integrityReport = `📊 **Main Questions Integrity:**\n` +
+                `• Total questions: ${totalQuestions}\n` +
+                `• Valid questions: ${validQuestions}\n` +
+                `• Corrupted questions: ${corruptedQuestions}\n` +
+                `• Integrity rate: ${((validQuestions / totalQuestions) * 100).toFixed(1)}%\n\n`;
+              
+              if (corruptedQuestions > 0) {
+                const sampleText = `📝 **Sample corrupted questions:**\n${corruptedSamples.join('\n')}\n\n`;
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, databaseReport + integrityReport + sampleText + `⚠️ **Recommendation:** Use "Delete All Data" to completely wipe everything.`);
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, databaseReport + integrityReport + `✅ **All questions are valid!** Database integrity is perfect.`);
+              }
+
+
+          } else if (data === 'admin:checkQuestion') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const totalQuestions = questions.length;
+            
+            if (totalQuestions === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ No questions in database to check.');
+              return new Response('OK');
+            }
+            
+            // Start with first question and save state
+            await env.STATE.put('admin:checkQuestion:index', '0');
+            const question = questions[0];
+            
+            const message = 
+              `🔍 **QUESTION VERIFICATION - Question 1 of ${totalQuestions}**\n\n` +
+              `📝 **Question:** ${question.question}\n\n` +
+              `A) ${question.options.A}\n` +
+              `B) ${question.options.B}\n` +
+              `C) ${question.options.C}\n` +
+              `D) ${question.options.D}\n\n` +
+              `✅ **Answer:** ${question.answer}\n` +
+              `📖 **Explanation:** ${question.explanation}\n\n` +
+              `🔍 **Verification:** Does answer "${question.answer}" match the explanation?`;
+            
+            const keyboard = {
+              inline_keyboard: [
+                [
+                  { text: '⬅️ Previous', callback_data: 'admin:checkQ:prev' },
+                  { text: '➡️ Next', callback_data: 'admin:checkQ:next' }
+                ],
+                [
+                  { text: '📝 Edit', callback_data: `admin:edit:0` },
+                  { text: '🗑️ Delete', callback_data: `admin:del:0` }
+                ],
+                [
+                  { text: '📤 Post Now', callback_data: `admin:postNow:0` }
+                ],
+                [
+                  { text: '✖️ Close', callback_data: 'admin:checkQ:close' }
+                ]
+              ]
+            };
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, message, { reply_markup: keyboard });
+          } else if (data === 'admin:checkQ:close') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Closed');
+            await env.STATE.delete('admin:checkQuestion:index');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Question verification closed.');
+          } else if (data === 'admin:checkQ:prev' || data === 'admin:checkQ:next') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const totalQuestions = questions.length;
+            
+            if (totalQuestions === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ No questions in database.');
+              return new Response('OK');
+            }
+            
+            const currentIndexStr = await env.STATE.get('admin:checkQuestion:index') || '0';
+            let currentIndex = parseInt(currentIndexStr, 10);
+            
+            if (data === 'admin:checkQ:next') {
+              currentIndex = (currentIndex + 1) % totalQuestions;
+            } else {
+              currentIndex = (currentIndex - 1 + totalQuestions) % totalQuestions;
+            }
+            
+            await env.STATE.put('admin:checkQuestion:index', String(currentIndex));
+            
+            const question = questions[currentIndex];
+            const questionNumber = currentIndex + 1;
+            
+            const message = 
+              `🔍 **QUESTION VERIFICATION - Question ${questionNumber} of ${totalQuestions}**\n\n` +
+              `📝 **Question:** ${question.question}\n\n` +
+              `A) ${question.options.A}\n` +
+              `B) ${question.options.B}\n` +
+              `C) ${question.options.C}\n` +
+              `D) ${question.options.D}\n\n` +
+              `✅ **Answer:** ${question.answer}\n` +
+              `📖 **Explanation:** ${question.explanation}\n\n` +
+              `🔍 **Verification:** Does answer "${question.answer}" match the explanation?`;
+            
+            const keyboard = {
+              inline_keyboard: [
+                [
+                  { text: '⬅️ Previous', callback_data: 'admin:checkQ:prev' },
+                  { text: '➡️ Next', callback_data: 'admin:checkQ:next' }
+                ],
+                [
+                  { text: '📝 Edit', callback_data: `admin:edit:${currentIndex}` },
+                  { text: '🗑️ Delete', callback_data: `admin:del:${currentIndex}` }
+                ],
+                [
+                  { text: '📤 Post Now', callback_data: `admin:postNow:${currentIndex}` }
+                ],
+                [
+                  { text: '✖️ Close', callback_data: 'admin:checkQ:close' }
+                ]
+              ]
+            };
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, message, { reply_markup: keyboard });
+
+          } else if (data === 'admin:jumpToQuestion') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            
+            console.log('🎯 Jump to Question button clicked');
+            
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const totalQuestions = questions.length;
+            
+            console.log(`📊 Total questions found: ${totalQuestions}`);
+            
+            if (totalQuestions === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ No questions in database to jump to.');
+              return new Response('OK');
+            }
+            
+            // Show first page of question numbers (1-20)
+            await showQuestionNumberPage(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId!, 0, totalQuestions);
+
+          } else if (data === 'admin:jumpToQuestion:cancel') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Jump to Question cancelled.');
+
+          } else if (data === 'admin:jumpToQuestion:close') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Closed');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Jump to Question closed.');
+
+          } else if (data.startsWith('admin:jumpToPage:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const page = parseInt(data.split(':')[2], 10);
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const totalQuestions = questions.length;
+            await showQuestionNumberPage(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId!, page, totalQuestions, query.message?.message_id);
+
+          } else if (data.startsWith('admin:jumpTo:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const questionIndex = parseInt(data.split(':')[2], 10);
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const totalQuestions = questions.length;
+            
+            if (questionIndex >= 0 && questionIndex < totalQuestions) {
+              const question = questions[questionIndex];
+              const questionNumber = questionIndex + 1;
+              
+              // Set the check question index to this question
+              await env.STATE.put('admin:checkQuestion:index', String(questionIndex));
+              
+              const message = 
+                `🎯 **JUMPED TO QUESTION ${questionNumber} of ${totalQuestions}**\n\n` +
+                `📝 **Question:** ${question.question}\n\n` +
+                `A) ${question.options.A}\n` +
+                `B) ${question.options.B}\n` +
+                `C) ${question.options.C}\n` +
+                `D) ${question.options.D}\n\n` +
+                `✅ **Answer:** ${question.answer}\n` +
+                `📖 **Explanation:** ${question.explanation}\n\n` +
+                `🔍 **Verification:** Does answer "${question.answer}" match the explanation?`;
+              
+              const keyboard = {
+                inline_keyboard: [
+                  [
+                    { text: '⬅️ Previous', callback_data: 'admin:checkQ:prev' },
+                    { text: '➡️ Next', callback_data: 'admin:checkQ:next' }
+                  ],
+                  [
+                    { text: '📝 Edit', callback_data: `admin:edit:${questionIndex}` },
+                    { text: '🗑️ Delete', callback_data: `admin:del:${questionIndex}` }
+                  ],
+                  [
+                    { text: '📤 Post Now', callback_data: `admin:postNow:${questionIndex}` }
+                  ],
+                  [
+                    { text: '✖️ Close', callback_data: 'admin:checkQ:close' }
+                  ]
+                ]
+              };
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, message, { reply_markup: keyboard });
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Invalid question index.');
+            }
+
+          } else if (data === 'admin:manage') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const indexKey = `idx:${env.TARGET_GROUP_ID}`;
+            const currentIndex = await getJSON<number>(env.STATE, indexKey, 0);
+            const upcoming = questions.slice(currentIndex);
+            if (upcoming.length === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions in database.');
+            } else {
+              await env.STATE.put('admin:manage:index', '0');
+              const txt = formatQuestionPreview(upcoming[0], currentIndex + 0);
+              const kb = { inline_keyboard: [[
+                { text: '⬅️ Prev', callback_data: 'admin:mg:prev' },
+                { text: '➡️ Next', callback_data: 'admin:mg:next' }
+              ], [
+                { text: '📝 Edit', callback_data: `admin:edit:${currentIndex + 0}` },
+                { text: '🗑️ Delete', callback_data: `admin:del:${currentIndex + 0}` }
+              ], [
+                { text: '📤 Post Now', callback_data: `admin:postNow:${currentIndex + 0}` }
+              ], [
+                { text: '✖️ Close', callback_data: 'admin:mg:close' }
+              ]] };
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, txt, { reply_markup: kb });
+            }
+          } else if (data === 'admin:mg:close') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Closed');
+            await env.STATE.delete('admin:manage:index');
+          } else if (data === 'admin:mg:prev' || data === 'admin:mg:next') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const indexKey = `idx:${env.TARGET_GROUP_ID}`;
+            const currentIndex = await getJSON<number>(env.STATE, indexKey, 0);
+            const upcoming = questions.slice(currentIndex);
+            if (upcoming.length === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions in database.');
+            } else {
+              const idxStr = (await env.STATE.get('admin:manage:index')) || '0';
+              let idx = parseInt(idxStr, 10) || 0;
+              if (data === 'admin:mg:next') idx = (idx + 1) % upcoming.length;
+              if (data === 'admin:mg:prev') idx = (idx - 1 + upcoming.length) % upcoming.length;
+              await env.STATE.put('admin:manage:index', String(idx));
+              const txt = formatQuestionPreview(upcoming[idx], currentIndex + idx);
+              const kb = { inline_keyboard: [[
+                { text: '⬅️ Prev', callback_data: 'admin:mg:prev' },
+                { text: '➡️ Next', callback_data: 'admin:mg:next' }
+              ], [
+                { text: '📝 Edit', callback_data: `admin:edit:${currentIndex + idx}` },
+                { text: '🗑️ Delete', callback_data: `admin:del:${currentIndex + idx}` }
+              ], [
+                { text: '📤 Post Now', callback_data: `admin:postNow:${currentIndex + idx}` }
+              ], [
+                { text: '✖️ Close', callback_data: 'admin:mg:close' }
+              ]] };
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, txt, { reply_markup: kb });
+            }
+          } else if (data.startsWith('admin:pendans:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const ans = data.split(':')[2] as 'A'|'B'|'C'|'D';
+            const raw = await env.STATE.get('admin:pending:q');
+            if (!raw) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No pending question found.');
+            } else {
+              const base = JSON.parse(raw);
+              const candidate: Question = trimQuestion({ ...base, answer: ans });
+              const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+              const seen = new Set(list.map(buildQuestionKey));
+              if (seen.has(buildQuestionKey(candidate))) {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '⚠️ Duplicate detected. Skipped adding to database.');
+              } else {
+                await putJSON(env.STATE, 'questions', [...list, candidate]);
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Question added to database.');
+              }
+              await env.STATE.delete('admin:pending:q');
+            }
+
+          } else if (data === 'admin:listAll') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            if (questions.length === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions in database.');
+            } else {
+              // Start with first 10 questions - use admin-specific key
+              const adminKey = `admin:listAll:page:${chatId}`;
+              await env.STATE.put(adminKey, '0');
+              await showQuestionsPage(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId!, questions, 0);
+            }
+          } else if (data.startsWith('admin:listAll:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            if (questions.length === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'No questions in database.');
+            } else {
+              const action = data.split(':')[2]; // admin:listAll:next -> get 'next'
+              const adminKey = `admin:listAll:page:${chatId}`;
+              const currentPageStr = await env.STATE.get(adminKey) || '0';
+              let currentPage = parseInt(currentPageStr, 10);
+              
+              console.log('Pagination debug:', { action, currentPageStr, currentPage, totalQuestions: questions.length, adminKey, maxPage: Math.ceil(questions.length / 10) - 1 });
+              
+              if (action === 'next') {
+                const maxPage = Math.ceil(questions.length / 10) - 1;
+                currentPage = Math.min(currentPage + 1, maxPage);
+                console.log('Next clicked, new page:', currentPage, 'maxPage:', maxPage);
+              } else if (action === 'prev') {
+                currentPage = Math.max(currentPage - 1, 0);
+                console.log('Prev clicked, new page:', currentPage);
+              } else if (action === 'close') {
+                await env.STATE.delete(adminKey);
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Closed question list');
+                return new Response('OK');
+              }
+              
+              console.log('Saving page state:', currentPage, 'to key:', adminKey);
+              await env.STATE.put(adminKey, String(currentPage));
+              await showQuestionsPage(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId!, questions, currentPage, query.message?.message_id);
+            }
+          } else if (data.startsWith('admin:del:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const idx = parseInt(data.split(':')[2], 10);
+            const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+            if (idx >= 0 && idx < list.length) {
+              const deleted = list.splice(idx, 1)[0];
+              await putJSON(env.STATE, 'questions', list);
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `🗑️ Deleted question #${idx + 1}:\n\n${truncate(deleted.question, 100)}...\n\nRemaining: ${list.length} questions`);
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Invalid question index');
+            }
+          } else if (data.startsWith('admin:postNow:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '📤 Posting now...');
+            const idx = parseInt(data.split(':')[2], 10);
+            const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+            if (idx >= 0 && idx < list.length) {
+              const question = list[idx];
+              
+              // Post to all targets immediately
+              const text = `<b>🧠 MCQ #${idx + 1}</b>\n\n<b>${esc(question.question)}</b>\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}`;
+              
+              const keyboard = {
+                inline_keyboard: [
+                  [
+                    { text: 'A', callback_data: `ans:${idx}:A` },
+                    { text: 'B', callback_data: `ans:${idx}:B` },
+                    { text: 'C', callback_data: `ans:${idx}:C` },
+                    { text: 'D', callback_data: `ans:${idx}:D` }
+                  ],
+                  [
+                    { text: '💬 Join Discussion', url: 'https://t.me/+u0P8X-ZWHU1jMDQ1' },
+                    { text: '📊 Your Stats', callback_data: 'user:stats' }
+                  ]
+                ]
+              };
+              
+              // Post to all targets
+              let successCount = 0;
+              let errorCount = 0;
+              
+              try {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, text, { reply_markup: keyboard, parse_mode: 'HTML' });
+                successCount++;
+              } catch (error) {
+                errorCount++;
+              }
+              
+              if (env.TARGET_CHANNEL_ID) {
+                try {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, env.TARGET_CHANNEL_ID, text, { reply_markup: keyboard, parse_mode: 'HTML' });
+                  successCount++;
+                } catch (error) {
+                  errorCount++;
+                }
+              }
+              
+              if (env.TARGET_DISCUSSION_GROUP_ID) {
+                try {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, env.TARGET_DISCUSSION_GROUP_ID, text, { reply_markup: keyboard, parse_mode: 'HTML' });
+                  successCount++;
+                } catch (error) {
+                  errorCount++;
+                }
+              }
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `📤 **Question #${idx + 1} posted successfully!**\n\n✅ **Posted to:** ${successCount} targets\n❌ **Failed:** ${errorCount} targets\n\n**Question:** ${truncate(question.question, 100)}...`);
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Invalid question index');
+            }
+          } else if (data.startsWith('admin:edit:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const parts = data.split(':');
+            const idx = parseInt(parts[2], 10);
+            await env.STATE.put('admin:edit:idx', String(idx));
+            const list = await getJSON<Question[]>(env.STATE, 'questions', []);
+            if (idx >= 0 && idx < list.length) {
+              const current = list[idx];
+              const example = JSON.stringify(current, null, 2);
+              const kb = { inline_keyboard: [[{ text: '✖️ Cancel Edit', callback_data: 'admin:editCancel' }]] };
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `📝 Editing Question #${idx + 1}\n\nSend updated question as JSON:\n\n<pre>${esc(example)}</pre>`, { reply_markup: kb });
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Invalid question index');
+            }
+          } else if (data === 'admin:editCancel') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
+            await env.STATE.delete('admin:edit:idx');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❎ Edit cancelled');
+
+          } else if (data === 'admin:manageDiscounts') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const buttons = await getDiscountButtons(env.STATE);
+            
+            if (buttons.length === 0) {
+              const keyboard = {
+                inline_keyboard: [
+                  [{ text: '➕ Add New Button', callback_data: 'admin:addDiscount' }],
+                  [{ text: '✖️ Close', callback_data: 'admin:discountClose' }]
+                ]
+              };
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '🎯 No discount buttons configured.\n\nClick "Add New Button" to create your first discount provider.', { reply_markup: keyboard });
+            } else {
+              let message = '🎯 Current Discount Buttons:\n\n';
+              buttons.forEach((btn, index) => {
+                message += `${index + 1}. **${btn.name}** (${btn.id})\n`;
+                message += `   Code: \`${btn.message1}\`\n`;
+                message += `   Message: ${btn.message2.substring(0, 50)}${btn.message2.length > 50 ? '...' : ''}\n\n`;
+              });
+              
+              const keyboard = {
+                inline_keyboard: [
+                  [{ text: '➕ Add New Button', callback_data: 'admin:addDiscount' }],
+                  ...buttons.map((btn, index) => [
+                    { text: `📝 Edit ${btn.name}`, callback_data: `admin:editDiscount:${btn.id}` },
+                    { text: `🗑️ Delete ${btn.name}`, callback_data: `admin:deleteDiscount:${btn.id}` }
+                  ]),
+                  [{ text: '✖️ Close', callback_data: 'admin:discountClose' }]
+                ]
+              };
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, message, { reply_markup: keyboard, parse_mode: 'Markdown' });
+            }
+          } else if (data === 'admin:addDiscount') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            await env.STATE.put('admin:addDiscount:pending', 'name');
+            const keyboard = {
+              inline_keyboard: [[{ text: '✖️ Cancel', callback_data: 'admin:discountCancel' }]]
+            };
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '🎯 Adding New Discount Button\n\nStep 1/4: Send the **button name** (e.g., "Marrow", "Cerebellum")', { reply_markup: keyboard });
+          } else if (data === 'admin:discountCancel') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
+            await env.STATE.delete('admin:addDiscount:pending');
+            await env.STATE.delete('admin:addDiscount:name');
+            await env.STATE.delete('admin:addDiscount:code');
+            await env.STATE.delete('admin:addDiscount:message');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❎ Discount button creation cancelled');
+          } else if (data === 'admin:discountClose') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Closed');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Discount management closed');
+          } else if (data.startsWith('admin:editDiscount:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const buttonId = data.split(':')[1];
+            const buttons = await getDiscountButtons(env.STATE);
+            const button = buttons.find(b => b.id === buttonId);
+            
+            if (button) {
+              await env.STATE.put('admin:editDiscount:target', buttonId);
+              await env.STATE.put('admin:editDiscount:pending', 'name');
+              await env.STATE.put('admin:editDiscount:name', button.name);
+              await env.STATE.put('admin:editDiscount:code', button.message1);
+              await env.STATE.put('admin:editDiscount:message', button.message2);
+              
+              const keyboard = {
+                inline_keyboard: [[{ text: '✖️ Cancel', callback_data: 'admin:discountCancel' }]]
+              };
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `📝 Editing: **${button.name}**\n\nStep 1/4: Send the **new button name** (current: ${button.name})`, { reply_markup: keyboard, parse_mode: 'Markdown' });
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Button not found');
+            }
+          } else if (data.startsWith('admin:deleteDiscount:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const buttonId = data.split(':')[1];
+            const buttons = await getDiscountButtons(env.STATE);
+            const button = buttons.find(b => b.id === buttonId);
+            
+            if (button) {
+              const filteredButtons = buttons.filter(b => b.id !== buttonId);
+              await saveDiscountButtons(env.STATE, filteredButtons);
+              
+              const keyboard = {
+                inline_keyboard: [[{ text: '✅ Back to List', callback_data: 'admin:manageDiscounts' }]]
+              };
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `🗑️ Deleted discount button: **${button.name}**\n\nCode: \`${button.message1}\``, { reply_markup: keyboard, parse_mode: 'Markdown' });
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Button not found');
+            }
+          } else if (data === 'admin:confirmDiscount') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Saving...');
+            
+            const name = await env.STATE.get('admin:addDiscount:name') || '';
+            const code = await env.STATE.get('admin:addDiscount:code') || '';
+            const message = await env.STATE.get('admin:addDiscount:message') || '';
+            
+            if (name && code && message) {
+              const id = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+              const buttons = await getDiscountButtons(env.STATE);
+              const newButton: DiscountButton = { id, name, message1: code, message2: message };
+              buttons.push(newButton);
+              await saveDiscountButtons(env.STATE, buttons);
+              
+              // Clean up
+              await env.STATE.delete('admin:addDiscount:pending');
+              await env.STATE.delete('admin:addDiscount:name');
+              await env.STATE.delete('admin:addDiscount:code');
+              await env.STATE.delete('admin:addDiscount:message');
+              
+              const keyboard = {
+                inline_keyboard: [[{ text: '✅ Back to List', callback_data: 'admin:manageDiscounts' }]]
+              };
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `✅ **Discount button created successfully!**\n\n**Name:** ${name}\n**Code:** \`${code}\`\n**Message:** ${message}`, { reply_markup: keyboard, parse_mode: 'Markdown' });
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Error: Missing required information');
+            }
+          } else if (data.startsWith('admin:confirmEditDiscount:')) {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Updating...');
+            
+            const targetId = data.split(':')[1];
+            const name = await env.STATE.get('admin:editDiscount:name') || '';
+            const code = await env.STATE.get('admin:editDiscount:code') || '';
+            const message = await env.STATE.get('admin:editDiscount:message') || '';
+            
+            if (name && code && message) {
+              const buttons = await getDiscountButtons(env.STATE);
+              const buttonIndex = buttons.findIndex(b => b.id === targetId);
+              
+              if (buttonIndex !== -1) {
+                buttons[buttonIndex] = { id: targetId, name, message1: code, message2: message };
+                await saveDiscountButtons(env.STATE, buttons);
+                
+                // Clean up
+                await env.STATE.delete('admin:editDiscount:pending');
+                await env.STATE.delete('admin:editDiscount:target');
+                await env.STATE.delete('admin:editDiscount:name');
+                await env.STATE.delete('admin:editDiscount:code');
+                await env.STATE.delete('admin:editDiscount:message');
+                
+                const keyboard = {
+                  inline_keyboard: [[{ text: '✅ Back to List', callback_data: 'admin:manageDiscounts' }]]
+                };
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `✅ **Discount button updated successfully!**\n\n**Name:** ${name}\n**Code:** \`${code}\`\n**Message:** ${message}`, { reply_markup: keyboard, parse_mode: 'Markdown' });
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Error: Button not found');
+              }
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Error: Missing required information');
+            }
+          }
         }
+        
+        return new Response('OK');
       } else if (url.pathname === '/tick' && request.method === 'GET') {
         await ensureKeys(env.STATE);
         await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
@@ -1659,7 +2786,7 @@ export default {
         const removed: Question[] = [];
         let removedCount = 0;
         
-        for (let i = 0, len = list.length; i < len; i++) {
+        for (let i = 0; i < list.length; i++) {
           const current = list[i];
           let isDuplicate = false;
           
@@ -1687,7 +2814,7 @@ export default {
       
       return new Response('Not Found', { status: 404 });
     } catch (error) {
-      if (true) console.error('Error:', error);
+      console.error('Error:', error);
       return new Response('Internal Server Error', { status: 500 });
     }
   },
@@ -1697,7 +2824,7 @@ export default {
       // Check if posts are stopped
       const isStopped = await env.STATE.get('admin:postsStopped');
       if (isStopped === '1') {
-        if (false) console.log('Hourly posts are stopped. Skipping scheduled post.');
+        console.log('Hourly posts are stopped. Skipping scheduled post.');
         return;
       }
       
@@ -1708,7 +2835,7 @@ export default {
         await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
       }
     } catch (error) {
-      if (true) console.error('Scheduled error:', error);
+      console.error('Scheduled error:', error);
     }
   }
 };
