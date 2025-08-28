@@ -1781,30 +1781,33 @@ export default {
                 
                 const isCorrect = answer === question.answer;
                 
-                // Keep popup VERY short to avoid Telegram's 200 char limit
-                // Just show if correct/wrong and the answer
-                const popupText = isCorrect 
-                  ? `✅ Correct!`
-                  : `❌ Wrong! Answer: ${question.answer}`;
+                // Build popup message with as much info as fits in 190 chars
+                let popupMessage = isCorrect 
+                  ? `✅ Correct!\n\nAnswer: ${question.answer}`
+                  : `❌ Wrong!\n\nAnswer: ${question.answer}`;
+                
+                // Calculate remaining space for explanation
+                const remainingChars = 190 - popupMessage.length;
+                if (question.explanation && remainingChars > 20) {
+                  let truncatedExplanation = question.explanation;
+                  if (truncatedExplanation.length > remainingChars - 5) {
+                    truncatedExplanation = truncatedExplanation.substring(0, remainingChars - 5) + '...';
+                  }
+                  popupMessage += `\n\n${truncatedExplanation}`;
+                }
                 
                 console.log('Sending popup:', { 
                   isCorrect, 
                   correctAnswer: question.answer, 
                   userAnswer: answer,
-                  popupTextLength: popupText.length,
-                  popupText
+                  popupLength: popupMessage.length
                 });
                 
-                // Send popup immediately
-                const result = await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popupText, true);
+                // Send popup with as much info as fits (PRIVATE - only visible to clicker)
+                const result = await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popupMessage, true);
                 console.log('Popup sent, result:', result);
                 
-                // Send full explanation as a message (optional - comment out if not wanted)
-                if (question.explanation && question.explanation.length > 20) {
-                  const fullExplanation = `📚 Explanation:\n${question.explanation}`;
-                  sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, fullExplanation)
-                    .catch(err => console.error('Failed to send explanation message:', err));
-                }
+                // NO MESSAGE SENT TO CHANNEL - Keep explanation private in popup only
                 
                 // Update stats in background (don't await)
                 incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata')
