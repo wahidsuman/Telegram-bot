@@ -1803,21 +1803,25 @@ export default {
                   popupLength: popupMessage.length
                 });
                 
-                // Send popup with as much info as fits (PRIVATE - only visible to clicker)
-                const result = await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popupMessage, true);
-                console.log('Popup sent, result:', result);
-                
-                // Send full explanation ONLY to discussion group
-                if (chatId && String(chatId) === env.TARGET_DISCUSSION_GROUP_ID && question.explanation) {
-                  const userName = query.from.first_name || 'User';
-                  const fullExplanation = `📚 ${userName} answered Question ${qid + 1}\n\n` +
-                    `❓ ${question.question}\n\n` +
-                    `✅ Correct Answer: ${question.answer}\n\n` +
-                    `📖 Explanation: ${question.explanation}`;
-                  sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, fullExplanation)
-                    .catch(err => console.error('Failed to send explanation to discussion group:', err));
+                // Check if this is the discussion group
+                if (chatId && String(chatId) === env.TARGET_DISCUSSION_GROUP_ID) {
+                  // DISCUSSION GROUP: Send explanation as message, NO popup
+                  await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id); // Answer without popup
+                  
+                  if (question.explanation) {
+                    const userName = query.from.first_name || 'User';
+                    const fullExplanation = `📚 ${userName} answered Question ${qid + 1}\n\n` +
+                      `❓ ${question.question}\n\n` +
+                      `✅ Correct Answer: ${question.answer}\n` +
+                      `👤 ${userName}'s Answer: ${answer} ${isCorrect ? '✅' : '❌'}\n\n` +
+                      `📖 Explanation: ${question.explanation}`;
+                    await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, fullExplanation);
+                  }
+                } else {
+                  // OTHER GROUPS/CHANNELS: Show popup only
+                  const result = await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popupMessage, true);
+                  console.log('Popup sent, result:', result);
                 }
-                // For other groups/channels - popup only, no message
                 
                 // Update stats in background (don't await)
                 incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata')
