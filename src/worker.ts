@@ -2715,7 +2715,9 @@ export default {
       
       return new Response('OK');
       
-      } else if (url.pathname === '/tick' && request.method === 'GET') {
+      } 
+      
+      if (url.pathname === '/tick' && request.method === 'GET') {
         await ensureKeys(env.STATE);
         await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
         const count = Number(new URL(request.url).searchParams.get('count') || '1');
