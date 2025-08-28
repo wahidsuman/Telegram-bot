@@ -84,9 +84,6 @@ interface TelegramUpdate {
   callback_query?: TelegramCallbackQuery;
 }
 
-
-// Simple cache for questions
-const questionsCache = { data: null, timestamp: 0 };
 // Utility functions
 function esc(str: string): string {
   return str
@@ -114,28 +111,15 @@ async function saveDiscountButtons(kv: KVNamespace, buttons: DiscountButton[]): 
 }
 
 async function getJSON<T>(kv: KVNamespace, key: string, defaultValue: T): Promise<T> {
-  // Cache questions for 5 minutes
-  if (key === 'questions' && questionsCache.data && Date.now() - questionsCache.timestamp < 300000) {
-    return questionsCache.data as T;
-  }
   try {
     const value = await kv.get(key);
-    const result = value ? JSON.parse(value) : defaultValue;
-    if (key === 'questions') {
-      questionsCache.data = result;
-      questionsCache.timestamp = Date.now();
-    }
-    return result;
+    return value ? JSON.parse(value) : defaultValue;
   } catch {
     return defaultValue;
   }
 }
 
 async function putJSON(kv: KVNamespace, key: string, obj: any): Promise<void> {
-  if (key === 'questions') {
-    questionsCache.data = null;
-    questionsCache.timestamp = 0;
-  }
   await kv.put(key, JSON.stringify(obj));
 }
 
@@ -1754,6 +1738,10 @@ export default {
         } else if (update.callback_query) {
           const query = update.callback_query;
           const data = query.data || '';
+
+          // DEBUG: Log callback data
+          console.log('Callback received:', data.substring(0, 20));
+
           const userId = query.from.id;
           const chatId = query.message?.chat.id;
           
@@ -1783,7 +1771,7 @@ export default {
             await putJSON(env.STATE, 'stats:total:users', totalUsers);
           }
           
-                                           if (data === 'user:stats') {
+                                           } else if (data === 'user:stats') {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
               if (chatId && chatId < 0) {
                 const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
