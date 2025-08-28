@@ -214,13 +214,19 @@ async function copyMessage(token: string, fromChatId: string | number, messageId
 }
 
 async function answerCallbackQuery(token: string, queryId: string, text?: string, showAlert?: boolean): Promise<any> {
-  console.log('answerCallbackQuery called:', { queryId, text: text?.substring(0, 50), showAlert });
+  console.log('answerCallbackQuery called:', { 
+    queryId, 
+    textLength: text?.length,
+    textPreview: text?.substring(0, 100), 
+    showAlert 
+  });
   const url = `https://api.telegram.org/bot${token}/answerCallbackQuery`;
   const body = {
     callback_query_id: queryId,
     text: text,
     show_alert: showAlert || false
   };
+  console.log('Request body:', JSON.stringify(body));
   
   try {
     const response = await fetch(url, {
@@ -230,10 +236,10 @@ async function answerCallbackQuery(token: string, queryId: string, text?: string
     });
     
     const result = await response.json();
-    console.log('answerCallbackQuery result:', result);
+    console.log('answerCallbackQuery result:', JSON.stringify(result));
     
     if (!result.ok) {
-      console.error('answerCallbackQuery failed:', result);
+      console.error('answerCallbackQuery failed:', JSON.stringify(result));
     }
     
     return result;
@@ -1774,9 +1780,24 @@ export default {
                 }
                 
                 const isCorrect = answer === question.answer;
-                const popupText = `${isCorrect ? '✅ Correct!' : '❌ Wrong!'}\n\nAnswer: ${question.answer}\n\nExplanation: ${question.explanation}`;
                 
-                console.log('Sending popup:', { isCorrect, correctAnswer: question.answer, userAnswer: answer });
+                // Telegram has a 200 character limit for callback query answers
+                let explanation = question.explanation || '';
+                const maxExplanationLength = 150; // Leave room for the prefix
+                if (explanation.length > maxExplanationLength) {
+                  explanation = explanation.substring(0, maxExplanationLength) + '...';
+                }
+                
+                const popupText = `${isCorrect ? '✅ Correct!' : '❌ Wrong!'}\n\nAnswer: ${question.answer}\n\n${explanation}`;
+                
+                console.log('Sending popup:', { 
+                  isCorrect, 
+                  correctAnswer: question.answer, 
+                  userAnswer: answer,
+                  originalExplanationLength: question.explanation?.length,
+                  truncatedExplanationLength: explanation.length,
+                  popupTextLength: popupText.length
+                });
                 
                 // Send popup immediately
                 const result = await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popupText, true);
