@@ -1745,35 +1745,31 @@ export default {
           const userId = query.from.id;
           const chatId = query.message?.chat.id;
           
-          // Handle callback queries based on data
-          console.log('Processing callback:', data);
-          
-          // Track DM users for stats (but don't block the flow)
+          // Track unique user interaction via callback queries
           const today = new Date().toISOString().split('T')[0];
           const yyyyMM = today.substring(0, 7);
           const userIdStr = userId.toString();
           
-          // Do tracking asynchronously to not block
-          Promise.all([
-            getJSON<string[]>(env.STATE, `stats:daily:users:${today}`, []).then(users => {
-              if (!users.includes(userIdStr)) {
-                users.push(userIdStr);
-                return putJSON(env.STATE, `stats:daily:users:${today}`, users);
-              }
-            }),
-            getJSON<string[]>(env.STATE, `stats:monthly:users:${yyyyMM}`, []).then(users => {
-              if (!users.includes(userIdStr)) {
-                users.push(userIdStr);
-                return putJSON(env.STATE, `stats:monthly:users:${yyyyMM}`, users);
-              }
-            }),
-            getJSON<string[]>(env.STATE, 'stats:total:users', []).then(users => {
-              if (!users.includes(userIdStr)) {
-                users.push(userIdStr);
-                return putJSON(env.STATE, 'stats:total:users', users);
-              }
-            })
-          ]).catch(err => console.error('Tracking error:', err));
+          // Track daily unique users
+          const dailyUsers = await getJSON<string[]>(env.STATE, `stats:daily:users:${today}`, []);
+          if (!dailyUsers.includes(userIdStr)) {
+            dailyUsers.push(userIdStr);
+            await putJSON(env.STATE, `stats:daily:users:${today}`, dailyUsers);
+          }
+          
+          // Track monthly unique users
+          const monthlyUsers = await getJSON<string[]>(env.STATE, `stats:monthly:users:${yyyyMM}`, []);
+          if (!monthlyUsers.includes(userIdStr)) {
+            monthlyUsers.push(userIdStr);
+            await putJSON(env.STATE, `stats:monthly:users:${yyyyMM}`, monthlyUsers);
+          }
+          
+          // Track total unique users (all-time)
+          const totalUsers = await getJSON<string[]>(env.STATE, 'stats:total:users', []);
+          if (!totalUsers.includes(userIdStr)) {
+            totalUsers.push(userIdStr);
+            await putJSON(env.STATE, 'stats:total:users', totalUsers);
+          }
           
           if (data === 'user:stats') {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
@@ -1911,46 +1907,31 @@ export default {
                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `${header}\n${body}`, { reply_markup: kb });
              }
            } else if (data.startsWith('ans:')) {
-            console.log('Answer callback detected:', data);
-            // MCQ answer handler
+            // MCQ answer - Optimized for speed
             const [, qidStr, answer] = data.split(':');
             const qid = parseInt(qidStr);
             
-            console.log('Parsed answer data:', { qid, answer });
-            
             // Get questions directly from main array
             const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
-            console.log('Loaded questions count:', questions.length);
             
             if (qid >= 0 && qid < questions.length) {
               const question = questions[qid];
-              console.log('Found question:', question?.question?.substring(0, 50));
               
               // Quick validation
               if (!question?.question || !question?.options || !question?.answer || !question?.explanation) {
-                console.error('Question data invalid:', question);
                 await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question data corrupted', true);
                 return new Response('OK');
               }
               
               const isCorrect = answer === question.answer;
-              console.log('Answer check:', { userAnswer: answer, correctAnswer: question.answer, isCorrect });
               
-              // Send the popup IMMEDIATELY
-              try {
-                await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 
-                  `${isCorrect ? '✅ Correct!' : '❌ Wrong!'}\n\nAnswer: ${question.answer}\n\nExplanation: ${question.explanation}`, 
-                  true);
-                console.log('Popup sent successfully');
-              } catch (error) {
-                console.error('Failed to send popup:', error);
-              }
-              
-              // Update stats in background (don't wait)
-              incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata')
-                .catch(err => console.error('Stats error:', err));
+              // Update stats and show popup in parallel for better performance
+              await Promise.all([
+                incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata'),
+                answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 
+                  `${isCorrect ? '✅ correct' : '❌ wrong'}\n\nAnswer: ${question.answer}\n\nExplanation: ${question.explanation}`, true)
+              ]);
             } else {
-              console.error('Question not found:', { qid, totalQuestions: questions.length });
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question not found', true);
             }
           } else if (data === 'coupon:copy') {
