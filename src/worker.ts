@@ -1793,20 +1793,29 @@ export default {
                 
                 const isCorrect = answer === question.answer;
                 
-                // Build popup message with as much info as fits in 190 chars
+                // Build popup message with invitation to discussion group
                 let popupMessage = isCorrect 
                   ? `✅ Correct!\n\nAnswer: ${question.answer}`
                   : `❌ Wrong!\n\nAnswer: ${question.answer}`;
                 
-                // Calculate remaining space for explanation
-                const remainingChars = 190 - popupMessage.length;
+                // Add invitation message (in italics using _ _)
+                const inviteMessage = `\n\n_For full explanation join discussion group below_`;
+                
+                // Calculate space for shortened explanation
+                // Reserve space for base message + invitation (about 100 chars total)
+                const baseLength = popupMessage.length + inviteMessage.length;
+                const remainingChars = 190 - baseLength;
+                
                 if (question.explanation && remainingChars > 20) {
                   let truncatedExplanation = question.explanation;
-                  if (truncatedExplanation.length > remainingChars - 5) {
-                    truncatedExplanation = truncatedExplanation.substring(0, remainingChars - 5) + '...';
+                  if (truncatedExplanation.length > remainingChars) {
+                    truncatedExplanation = truncatedExplanation.substring(0, remainingChars - 3) + '...';
                   }
                   popupMessage += `\n\n${truncatedExplanation}`;
                 }
+                
+                // Always add the invitation at the end
+                popupMessage += inviteMessage;
                 
                 console.log('Sending popup:', { 
                   isCorrect, 
