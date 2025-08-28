@@ -939,22 +939,14 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
 }
 
 async function formatDailyReport(kv: KVNamespace, date: string): Promise<string> {
-  const [stats, dailyUsers, totalUsers] = await Promise.all([
-    getJSON<DayStats>(kv, `stats:daily:${date}`, { total: 0, users: {} }),
-    getJSON<string[]>(kv, `stats:daily:users:${date}`, []),
-    getJSON<string[]>(kv, 'stats:total:users', [])
-  ]);
+  const stats = await getJSON<DayStats>(kv, `stats:daily:${date}`, { total: 0, users: {} });
   
   const uniqueUsers = Object.keys(stats.users).length;
-  const uniqueDMUsers = dailyUsers.length;
-  const totalDMUsers = totalUsers.length;
   const totalAnswers = stats.total;
   const avgPerUser = uniqueUsers > 0 ? (totalAnswers / uniqueUsers).toFixed(1) : '0';
   
   let report = `📊 Daily MCQ Report - ${date}\n\n`;
   report += `👥 MCQ Users: ${uniqueUsers}\n`;
-  report += `💬 DM Users (Today): ${uniqueDMUsers}\n`;
-  report += `💬 DM Users (Total): ${totalDMUsers}\n`;
   report += `📝 Total Answers: ${totalAnswers}\n`;
   report += `📈 Average per User: ${avgPerUser}\n\n`;
   
@@ -1025,22 +1017,14 @@ async function showQuestionNumberPage(kv: KVNamespace, token: string, chatId: st
 }
 
 async function formatMonthlyReport(kv: KVNamespace, yyyyMM: string): Promise<string> {
-  const [stats, monthlyUsers, totalUsers] = await Promise.all([
-    getJSON<DayStats>(kv, `stats:monthly:${yyyyMM}`, { total: 0, users: {} }),
-    getJSON<string[]>(kv, `stats:monthly:users:${yyyyMM}`, []),
-    getJSON<string[]>(kv, 'stats:total:users', [])
-  ]);
+  const stats = await getJSON<DayStats>(kv, `stats:monthly:${yyyyMM}`, { total: 0, users: {} });
   
   const uniqueUsers = Object.keys(stats.users).length;
-  const uniqueDMUsers = monthlyUsers.length;
-  const totalDMUsers = totalUsers.length;
   const totalAnswers = stats.total;
   const avgPerUser = uniqueUsers > 0 ? (totalAnswers / uniqueUsers).toFixed(1) : '0';
   
   let report = `📊 Monthly MCQ Report - ${yyyyMM}\n\n`;
   report += `👥 MCQ Users: ${uniqueUsers}\n`;
-  report += `💬 DM Users (Month): ${uniqueDMUsers}\n`;
-  report += `💬 DM Users (Total): ${totalDMUsers}\n`;
   report += `📝 Total Answers: ${totalAnswers}\n`;
   report += `📈 Average per User: ${avgPerUser}\n\n`;
   
