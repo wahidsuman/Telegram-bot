@@ -432,20 +432,7 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
     await sendMessage(token, extraChannelId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
   }
   
-  // Post to discussion group with answer included
-  if (discussionGroupId) {
-    const discussionText = `<b>🧠 Hourly MCQ #${currentIndex + 1}</b>\n\n<b>${esc(question.question)}</b>\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}\n\n<b>✅ Answer: ${question.answer}</b>\n\n<b>📝 Explanation:</b>\n${esc(question.explanation)}`;
-    
-    const discussionKeyboard = {
-      inline_keyboard: [
-        [
-          { text: '📊 Your Stats', callback_data: 'user:stats' }
-        ]
-      ]
-    };
-    
-    await sendMessage(token, discussionGroupId, discussionText, { reply_markup: discussionKeyboard, parse_mode: 'HTML' });
-  }
+  // DO NOT post questions to discussion group - it only gets explanations when someone clicks
 }
 
 function validateQuestion(q: any): q is Question {
@@ -1319,16 +1306,7 @@ export default {
                   }
                 }
                 
-                // Broadcast to discussion group if configured
-                if (env.TARGET_DISCUSSION_GROUP_ID) {
-                  try {
-                    await copyMessage(env.TELEGRAM_BOT_TOKEN, chatId, message.message_id, env.TARGET_DISCUSSION_GROUP_ID);
-                    successCount++;
-                  } catch (error) {
-                    errorCount++;
-                    console.error('Broadcast to discussion group failed:', error);
-                  }
-                }
+                // DO NOT broadcast to discussion group - it only gets explanations
                 
                 await env.STATE.delete('admin:broadcast:pending');
                 
@@ -2564,14 +2542,7 @@ export default {
                 }
               }
               
-              if (env.TARGET_DISCUSSION_GROUP_ID) {
-                try {
-                  await sendMessage(env.TELEGRAM_BOT_TOKEN, env.TARGET_DISCUSSION_GROUP_ID, text, { reply_markup: keyboard, parse_mode: 'HTML' });
-                  successCount++;
-                } catch (error) {
-                  errorCount++;
-                }
-              }
+              // DO NOT post to discussion group - it only gets explanations
               
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `📤 **Question #${idx + 1} posted successfully!**\n\n✅ **Posted to:** ${successCount} targets\n❌ **Failed:** ${errorCount} targets\n\n**Question:** ${truncate(question.question, 100)}...`);
             } else {
