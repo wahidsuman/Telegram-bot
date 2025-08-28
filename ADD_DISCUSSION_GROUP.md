@@ -40,4 +40,4 @@ After deployment:
 1. Click an MCQ option in the discussion group
 2. You should see the explanation posted as a message
 3. Click an MCQ option in another group
-4. You should see a popup with the answer
+4. You should see a popup with the answer# Trigger deployment with new secret Thu Aug 28 09:26:29 PM UTC 2025
