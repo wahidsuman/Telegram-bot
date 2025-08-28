@@ -1778,6 +1778,7 @@ export default {
             } else {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question not found', true);
             }
+            return new Response('OK');
             
           } else if (data === 'user:stats') {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
