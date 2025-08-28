@@ -1807,7 +1807,17 @@ export default {
                 const result = await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popupMessage, true);
                 console.log('Popup sent, result:', result);
                 
-                // NO MESSAGE SENT TO CHANNEL - Keep explanation private in popup only
+                // Send full explanation ONLY to discussion group
+                if (chatId && String(chatId) === env.TARGET_DISCUSSION_GROUP_ID && question.explanation) {
+                  const userName = query.from.first_name || 'User';
+                  const fullExplanation = `📚 ${userName} answered Question ${qid + 1}\n\n` +
+                    `❓ ${question.question}\n\n` +
+                    `✅ Correct Answer: ${question.answer}\n\n` +
+                    `📖 Explanation: ${question.explanation}`;
+                  sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, fullExplanation)
+                    .catch(err => console.error('Failed to send explanation to discussion group:', err));
+                }
+                // For other groups/channels - popup only, no message
                 
                 // Update stats in background (don't await)
                 incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata')
