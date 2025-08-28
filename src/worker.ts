@@ -1821,13 +1821,9 @@ export default {
                   await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id); // Answer without popup
                   
                   if (question.explanation) {
-                    const userName = query.from.first_name || 'User';
-                    const fullExplanation = `📚 ${userName} answered Question ${qid + 1}\n\n` +
-                      `❓ ${question.question}\n\n` +
-                      `✅ Correct Answer: ${question.answer}\n` +
-                      `👤 ${userName}'s Answer: ${answer} ${isCorrect ? '✅' : '❌'}\n\n` +
-                      `📖 Explanation: ${question.explanation}`;
-                    await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, fullExplanation);
+                    // Simple format: just question number and explanation
+                    const explanationMessage = `📚 Question ${qid + 1}\n\n${question.explanation}`;
+                    await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, explanationMessage);
                   }
                 } else {
                   // OTHER GROUPS/CHANNELS: Show popup only
