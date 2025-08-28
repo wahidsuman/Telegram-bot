@@ -42,43 +42,6 @@ interface DayStats {
   users: Record<string, UserStats>;
 }
 
-// ============================================
-// PERFORMANCE OPTIMIZATION: Memory Cache
-// ============================================
-class MemoryCache {
-  private cache = new Map<string, { value: any; expires: number }>();
-  private readonly DEFAULT_TTL = 60000; // 1 minute
-
-  get<T>(key: string): T | undefined {
-    const item = this.cache.get(key);
-    if (!item) return undefined;
-    if (Date.now() > item.expires) {
-      this.cache.delete(key);
-      return undefined;
-    }
-    return item.value as T;
-  }
-
-  set(key: string, value: any, ttl: number = this.DEFAULT_TTL): void {
-    this.cache.set(key, {
-      value,
-      expires: Date.now() + ttl
-    });
-  }
-
-  delete(key: string): void {
-    this.cache.delete(key);
-  }
-
-  clear(): void {
-    this.cache.clear();
-  }
-}
-
-// Global cache instance
-const cache = new MemoryCache();
-
-
 interface TelegramMessage {
   message_id: number;
   from?: {
@@ -123,9 +86,6 @@ interface TelegramUpdate {
 
 // Utility functions
 function esc(str: string): string {
-  // Optimize by checking if escaping is needed first
-  if (!/[&<>"']/.test(str)) return str;
-  
   return str
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -135,54 +95,6 @@ function esc(str: string): string {
 }
 
 // Discount button management
-// Memoized date cache
-const dateCache = new Map<string, string>();
-
-function getCurrentDate(tz: string): string {
-  const cacheKey = `date:${tz}:${Math.floor(Date.now() / 60000)}`; // Cache per minute
-  if (dateCache.has(cacheKey)) return dateCache.get(cacheKey)!;
-  
-  const now = new Date();
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  });
-  const result = formatter.format(now);
-  dateCache.set(cacheKey, result);
-  
-  // Clean old cache entries
-  if (dateCache.size > 10) {
-    const firstKey = dateCache.keys().next().value;
-    dateCache.delete(firstKey);
-  }
-  
-  return result;
-}
-
-function getCurrentMonth(tz: string): string {
-  const cacheKey = `month:${tz}:${Math.floor(Date.now() / 3600000)}`; // Cache per hour
-  if (dateCache.has(cacheKey)) return dateCache.get(cacheKey)!;
-  
-  const now = new Date();
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit'
-  });
-  const result = formatter.format(now);
-  dateCache.set(cacheKey, result);
-  
-  // Clean old cache entries
-  if (dateCache.size > 10) {
-    const firstKey = dateCache.keys().next().value;
-    dateCache.delete(firstKey);
-  }
-  
-  return result;
-}
-
 async function getDiscountButtons(kv: KVNamespace): Promise<DiscountButton[]> {
   return await getJSON<DiscountButton[]>(kv, 'discount_buttons', [
     {
@@ -199,40 +111,36 @@ async function saveDiscountButtons(kv: KVNamespace, buttons: DiscountButton[]): 
 }
 
 async function getJSON<T>(kv: KVNamespace, key: string, defaultValue: T): Promise<T> {
-  // Check memory cache first for frequently accessed keys
-  const cacheKey = `kv:${key}`;
-  const cached = cache.get<T>(cacheKey);
-  if (cached !== undefined) return cached;
-
   try {
     const value = await kv.get(key);
-    const result = value ? JSON.parse(value) : defaultValue;
-    
-    // Cache frequently accessed keys
-    if (key.startsWith('questions') || key.startsWith('discount_buttons') || key.includes('stats')) {
-      cache.set(cacheKey, result, 60000); // 1 minute cache
-    }
-    
-    return result;
+    return value ? JSON.parse(value) : defaultValue;
   } catch {
-    return defaultValue;
-  }
-} catch {
     return defaultValue;
   }
 }
 
 async function putJSON(kv: KVNamespace, key: string, obj: any): Promise<void> {
-  // Invalidate cache
-  cache.delete(`kv:${key}`);
   await kv.put(key, JSON.stringify(obj));
 }
 
-);
+function getCurrentDate(tz: string): string {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
   return formatter.format(now);
 }
 
-);
+function getCurrentMonth(tz: string): string {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit'
+  });
   return formatter.format(now);
 }
 
