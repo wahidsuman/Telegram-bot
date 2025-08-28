@@ -1742,7 +1742,44 @@ export default {
           const chatId = query.message?.chat.id;
           
                     // Handle callbacks
-          if (data === 'user:stats') {
+          
+          // Check for answer callbacks FIRST (highest priority)
+          if (data.startsWith('ans:')) {
+            console.log('Answer button clicked:', data);
+            // MCQ answer handler
+            const [, qidStr, answer] = data.split(':');
+            const qid = parseInt(qidStr);
+            
+            console.log('Processing answer:', { qid, answer });
+            
+            // Get questions directly from main array
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            
+            if (qid >= 0 && qid < questions.length) {
+              const question = questions[qid];
+              
+              // Quick validation
+              if (!question?.question || !question?.options || !question?.answer || !question?.explanation) {
+                await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question data corrupted', true);
+                return new Response('OK');
+              }
+              
+              const isCorrect = answer === question.answer;
+              
+              // Send popup immediately
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 
+                `${isCorrect ? '✅ Correct!' : '❌ Wrong!'}\n\nAnswer: ${question.answer}\n\nExplanation: ${question.explanation}`, 
+                true);
+              
+              // Update stats in background
+              incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata')
+                .catch(err => console.error('Stats update error:', err));
+                
+            } else {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question not found', true);
+            }
+            
+          } else if (data === 'user:stats') {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
               if (chatId && chatId < 0) {
                 const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
@@ -1877,35 +1914,6 @@ export default {
               ] };
                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `${header}\n${body}`, { reply_markup: kb });
              }
-           } else if (data.startsWith('ans:')) {
-            console.log('Answer button clicked:', data);
-            // MCQ answer - Optimized for speed
-            const [, qidStr, answer] = data.split(':');
-            const qid = parseInt(qidStr);
-            
-            // Get questions directly from main array
-            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
-            
-            if (qid >= 0 && qid < questions.length) {
-              const question = questions[qid];
-              
-              // Quick validation
-              if (!question?.question || !question?.options || !question?.answer || !question?.explanation) {
-                await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question data corrupted', true);
-                return new Response('OK');
-              }
-              
-              const isCorrect = answer === question.answer;
-              
-              // Update stats and show popup in parallel for better performance
-              await Promise.all([
-                incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata'),
-                answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 
-                  `${isCorrect ? '✅ correct' : '❌ wrong'}\n\nAnswer: ${question.answer}\n\nExplanation: ${question.explanation}`, true)
-              ]);
-            } else {
-              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question not found', true);
-            }
           } else if (data === 'coupon:copy') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             
