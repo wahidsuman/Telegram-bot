@@ -1781,27 +1781,30 @@ export default {
                 
                 const isCorrect = answer === question.answer;
                 
-                // Telegram has a 200 character limit for callback query answers
-                let explanation = question.explanation || '';
-                const maxExplanationLength = 150; // Leave room for the prefix
-                if (explanation.length > maxExplanationLength) {
-                  explanation = explanation.substring(0, maxExplanationLength) + '...';
-                }
-                
-                const popupText = `${isCorrect ? '✅ Correct!' : '❌ Wrong!'}\n\nAnswer: ${question.answer}\n\n${explanation}`;
+                // Keep popup VERY short to avoid Telegram's 200 char limit
+                // Just show if correct/wrong and the answer
+                const popupText = isCorrect 
+                  ? `✅ Correct!`
+                  : `❌ Wrong! Answer: ${question.answer}`;
                 
                 console.log('Sending popup:', { 
                   isCorrect, 
                   correctAnswer: question.answer, 
                   userAnswer: answer,
-                  originalExplanationLength: question.explanation?.length,
-                  truncatedExplanationLength: explanation.length,
-                  popupTextLength: popupText.length
+                  popupTextLength: popupText.length,
+                  popupText
                 });
                 
                 // Send popup immediately
                 const result = await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popupText, true);
                 console.log('Popup sent, result:', result);
+                
+                // Send full explanation as a message (optional - comment out if not wanted)
+                if (question.explanation && question.explanation.length > 20) {
+                  const fullExplanation = `📚 Explanation:\n${question.explanation}`;
+                  sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, fullExplanation)
+                    .catch(err => console.error('Failed to send explanation message:', err));
+                }
                 
                 // Update stats in background (don't await)
                 incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata')
