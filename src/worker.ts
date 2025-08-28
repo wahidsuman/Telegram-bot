@@ -1185,6 +1185,18 @@ export default {
           
           // Fast path for common commands
           
+          // Handle /groupid command to help identify discussion group
+          if (message.text === '/groupid') {
+            const groupInfo = `📍 Chat Information:\n\n` +
+              `Chat ID: \`${chatId}\`\n` +
+              `Chat Type: ${message.chat.type}\n` +
+              `Chat Title: ${message.chat.title || 'N/A'}\n\n` +
+              `To set this as discussion group, add to GitHub Secrets:\n` +
+              `TARGET_DISCUSSION_GROUP_ID = ${chatId}`;
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, groupInfo, { parse_mode: 'Markdown' });
+            return new Response('OK');
+          }
+          
           // Handle /start command first, before any other logic
           if (message.text === '/start' || message.text === '/admin') {
             // Fast admin check - avoid string operations when possible
