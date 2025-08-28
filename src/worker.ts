@@ -432,7 +432,11 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
     await sendMessage(token, extraChannelId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
   }
   
-  // DO NOT post questions to discussion group - it only gets explanations when someone clicks
+  // Post ONLY explanation to discussion group (no question, no options)
+  if (discussionGroupId) {
+    const explanationOnly = `📚 Question ${currentIndex + 1}\n\n${question.explanation}`;
+    await sendMessage(token, discussionGroupId, explanationOnly);
+  }
 }
 
 function validateQuestion(q: any): q is Question {
@@ -1802,21 +1806,9 @@ export default {
                   popupLength: popupMessage.length
                 });
                 
-                // Check if this is the discussion group
-                if (chatId && String(chatId) === env.TARGET_DISCUSSION_GROUP_ID) {
-                  // DISCUSSION GROUP: Send explanation as message, NO popup
-                  await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id); // Answer without popup
-                  
-                  if (question.explanation) {
-                    // Simple format: just question number and explanation
-                    const explanationMessage = `📚 Question ${qid + 1}\n\n${question.explanation}`;
-                    await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, explanationMessage);
-                  }
-                } else {
-                  // OTHER GROUPS/CHANNELS: Show popup only
-                  const result = await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popupMessage, true);
-                  console.log('Popup sent, result:', result);
-                }
+                // Send popup to everyone (including discussion group now, since explanations are posted automatically)
+                const result = await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popupMessage, true);
+                console.log('Popup sent, result:', result);
                 
                 // Update stats in background (don't await)
                 incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata')
