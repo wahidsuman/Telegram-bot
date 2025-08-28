@@ -1771,7 +1771,7 @@ export default {
             await putJSON(env.STATE, 'stats:total:users', totalUsers);
           }
           
-                                           } else if (data === 'user:stats') {
+          if (data === 'user:stats') {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
               if (chatId && chatId < 0) {
                 const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
