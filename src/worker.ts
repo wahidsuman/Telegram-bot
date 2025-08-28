@@ -1738,43 +1738,10 @@ export default {
         } else if (update.callback_query) {
           const query = update.callback_query;
           const data = query.data || '';
-
-          // DEBUG: Log callback data
-          console.log('Callback received:', data.substring(0, 20));
-
           const userId = query.from.id;
           const chatId = query.message?.chat.id;
           
-          // Handle callback queries based on data
-          console.log('Processing callback:', data);
-          
-          // Track DM users for stats (but don't block the flow)
-          const today = new Date().toISOString().split('T')[0];
-          const yyyyMM = today.substring(0, 7);
-          const userIdStr = userId.toString();
-          
-          // Do tracking asynchronously to not block
-          Promise.all([
-            getJSON<string[]>(env.STATE, `stats:daily:users:${today}`, []).then(users => {
-              if (!users.includes(userIdStr)) {
-                users.push(userIdStr);
-                return putJSON(env.STATE, `stats:daily:users:${today}`, users);
-              }
-            }),
-            getJSON<string[]>(env.STATE, `stats:monthly:users:${yyyyMM}`, []).then(users => {
-              if (!users.includes(userIdStr)) {
-                users.push(userIdStr);
-                return putJSON(env.STATE, `stats:monthly:users:${yyyyMM}`, users);
-              }
-            }),
-            getJSON<string[]>(env.STATE, 'stats:total:users', []).then(users => {
-              if (!users.includes(userIdStr)) {
-                users.push(userIdStr);
-                return putJSON(env.STATE, 'stats:total:users', users);
-              }
-            })
-          ]).catch(err => console.error('Tracking error:', err));
-          
+                    // Handle callbacks
           if (data === 'user:stats') {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
               if (chatId && chatId < 0) {
@@ -1911,46 +1878,32 @@ export default {
                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `${header}\n${body}`, { reply_markup: kb });
              }
            } else if (data.startsWith('ans:')) {
-            console.log('Answer callback detected:', data);
-            // MCQ answer handler
+            console.log('Answer button clicked:', data);
+            // MCQ answer - Optimized for speed
             const [, qidStr, answer] = data.split(':');
             const qid = parseInt(qidStr);
             
-            console.log('Parsed answer data:', { qid, answer });
-            
             // Get questions directly from main array
             const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
-            console.log('Loaded questions count:', questions.length);
             
             if (qid >= 0 && qid < questions.length) {
               const question = questions[qid];
-              console.log('Found question:', question?.question?.substring(0, 50));
               
               // Quick validation
               if (!question?.question || !question?.options || !question?.answer || !question?.explanation) {
-                console.error('Question data invalid:', question);
                 await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question data corrupted', true);
                 return new Response('OK');
               }
               
               const isCorrect = answer === question.answer;
-              console.log('Answer check:', { userAnswer: answer, correctAnswer: question.answer, isCorrect });
               
-              // Send the popup IMMEDIATELY
-              try {
-                await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 
-                  `${isCorrect ? '✅ Correct!' : '❌ Wrong!'}\n\nAnswer: ${question.answer}\n\nExplanation: ${question.explanation}`, 
-                  true);
-                console.log('Popup sent successfully');
-              } catch (error) {
-                console.error('Failed to send popup:', error);
-              }
-              
-              // Update stats in background (don't wait)
-              incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata')
-                .catch(err => console.error('Stats error:', err));
+              // Update stats and show popup in parallel for better performance
+              await Promise.all([
+                incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata'),
+                answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 
+                  `${isCorrect ? '✅ correct' : '❌ wrong'}\n\nAnswer: ${question.answer}\n\nExplanation: ${question.explanation}`, true)
+              ]);
             } else {
-              console.error('Question not found:', { qid, totalQuestions: questions.length });
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question not found', true);
             }
           } else if (data === 'coupon:copy') {
@@ -2200,7 +2153,6 @@ export default {
               ]
             };
             
-            // Edit the existing message instead of sending a new one
             if (query.message?.message_id) {
               await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId!, query.message.message_id, message, { reply_markup: keyboard });
             } else {
@@ -2265,7 +2217,6 @@ export default {
               ]
             };
             
-            // Edit the existing message instead of sending a new one
             if (query.message?.message_id) {
               await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId!, query.message.message_id, message, { reply_markup: keyboard });
             } else {
@@ -2348,8 +2299,7 @@ export default {
                 ]
               };
               
-              // Edit the existing message instead of sending a new one
-            if (query.message?.message_id) {
+              if (query.message?.message_id) {
               await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId!, query.message.message_id, message, { reply_markup: keyboard });
             } else {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, message, { reply_markup: keyboard });
@@ -2711,12 +2661,9 @@ export default {
             }
           }
         }
-      }
-      
-      return new Response('OK');
-    }
-    
-    if (url.pathname === '/tick' && request.method === 'GET') {
+        
+        return new Response('OK');
+      } else if (url.pathname === '/tick' && request.method === 'GET') {
         await ensureKeys(env.STATE);
         await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
         const count = Number(new URL(request.url).searchParams.get('count') || '1');
