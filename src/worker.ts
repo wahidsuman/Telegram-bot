@@ -939,19 +939,22 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
 }
 
 async function formatDailyReport(kv: KVNamespace, date: string): Promise<string> {
-  const [stats, dailyUsers] = await Promise.all([
+  const [stats, dailyUsers, totalUsers] = await Promise.all([
     getJSON<DayStats>(kv, `stats:daily:${date}`, { total: 0, users: {} }),
-    getJSON<string[]>(kv, `stats:daily:users:${date}`, [])
+    getJSON<string[]>(kv, `stats:daily:users:${date}`, []),
+    getJSON<string[]>(kv, 'stats:total:users', [])
   ]);
   
   const uniqueUsers = Object.keys(stats.users).length;
   const uniqueDMUsers = dailyUsers.length;
+  const totalDMUsers = totalUsers.length;
   const totalAnswers = stats.total;
   const avgPerUser = uniqueUsers > 0 ? (totalAnswers / uniqueUsers).toFixed(1) : '0';
   
   let report = `📊 Daily MCQ Report - ${date}\n\n`;
   report += `👥 MCQ Users: ${uniqueUsers}\n`;
-  report += `💬 DM Users: ${uniqueDMUsers}\n`;
+  report += `💬 DM Users (Today): ${uniqueDMUsers}\n`;
+  report += `💬 DM Users (Total): ${totalDMUsers}\n`;
   report += `📝 Total Answers: ${totalAnswers}\n`;
   report += `📈 Average per User: ${avgPerUser}\n\n`;
   
@@ -1022,19 +1025,22 @@ async function showQuestionNumberPage(kv: KVNamespace, token: string, chatId: st
 }
 
 async function formatMonthlyReport(kv: KVNamespace, yyyyMM: string): Promise<string> {
-  const [stats, monthlyUsers] = await Promise.all([
+  const [stats, monthlyUsers, totalUsers] = await Promise.all([
     getJSON<DayStats>(kv, `stats:monthly:${yyyyMM}`, { total: 0, users: {} }),
-    getJSON<string[]>(kv, `stats:monthly:users:${yyyyMM}`, [])
+    getJSON<string[]>(kv, `stats:monthly:users:${yyyyMM}`, []),
+    getJSON<string[]>(kv, 'stats:total:users', [])
   ]);
   
   const uniqueUsers = Object.keys(stats.users).length;
   const uniqueDMUsers = monthlyUsers.length;
+  const totalDMUsers = totalUsers.length;
   const totalAnswers = stats.total;
   const avgPerUser = uniqueUsers > 0 ? (totalAnswers / uniqueUsers).toFixed(1) : '0';
   
   let report = `📊 Monthly MCQ Report - ${yyyyMM}\n\n`;
   report += `👥 MCQ Users: ${uniqueUsers}\n`;
-  report += `💬 DM Users: ${uniqueDMUsers}\n`;
+  report += `💬 DM Users (Month): ${uniqueDMUsers}\n`;
+  report += `💬 DM Users (Total): ${totalDMUsers}\n`;
   report += `📝 Total Answers: ${totalAnswers}\n`;
   report += `📈 Average per User: ${avgPerUser}\n\n`;
   
@@ -1207,26 +1213,33 @@ export default {
                               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel - WITH POST NOW', { reply_markup: keyboard });
                return new Response('OK');
             } else {
-              // Track unique user interaction
-              const today = new Date().toISOString().split('T')[0];
-              const yyyyMM = today.substring(0, 7);
-              const userId = message.from?.id?.toString();
-              
-              if (userId) {
-                // Track daily unique users
-                const dailyUsers = await getJSON<Set<string>>(env.STATE, `stats:daily:users:${today}`, []);
-                if (!dailyUsers.includes(userId)) {
-                  dailyUsers.push(userId);
-                  await putJSON(env.STATE, `stats:daily:users:${today}`, dailyUsers);
-                }
-                
-                // Track monthly unique users
-                const monthlyUsers = await getJSON<Set<string>>(env.STATE, `stats:monthly:users:${yyyyMM}`, []);
-                if (!monthlyUsers.includes(userId)) {
-                  monthlyUsers.push(userId);
-                  await putJSON(env.STATE, `stats:monthly:users:${yyyyMM}`, monthlyUsers);
-                }
-              }
+                        // Track unique user interaction
+          const today = new Date().toISOString().split('T')[0];
+          const yyyyMM = today.substring(0, 7);
+          const userId = message.from?.id?.toString();
+          
+          if (userId) {
+            // Track daily unique users
+            const dailyUsers = await getJSON<string[]>(env.STATE, `stats:daily:users:${today}`, []);
+            if (!dailyUsers.includes(userId)) {
+              dailyUsers.push(userId);
+              await putJSON(env.STATE, `stats:daily:users:${today}`, dailyUsers);
+            }
+            
+            // Track monthly unique users
+            const monthlyUsers = await getJSON<string[]>(env.STATE, `stats:monthly:users:${yyyyMM}`, []);
+            if (!monthlyUsers.includes(userId)) {
+              monthlyUsers.push(userId);
+              await putJSON(env.STATE, `stats:monthly:users:${yyyyMM}`, monthlyUsers);
+            }
+            
+            // Track total unique users (all-time)
+            const totalUsers = await getJSON<string[]>(env.STATE, 'stats:total:users', []);
+            if (!totalUsers.includes(userId)) {
+              totalUsers.push(userId);
+              await putJSON(env.STATE, 'stats:total:users', totalUsers);
+            }
+          }
               
               // Show regular user buttons
               const keyboard = {
@@ -1745,6 +1758,13 @@ export default {
           if (!monthlyUsers.includes(userIdStr)) {
             monthlyUsers.push(userIdStr);
             await putJSON(env.STATE, `stats:monthly:users:${yyyyMM}`, monthlyUsers);
+          }
+          
+          // Track total unique users (all-time)
+          const totalUsers = await getJSON<string[]>(env.STATE, 'stats:total:users', []);
+          if (!totalUsers.includes(userIdStr)) {
+            totalUsers.push(userIdStr);
+            await putJSON(env.STATE, 'stats:total:users', totalUsers);
           }
           
                                            if (data === 'user:stats') {
