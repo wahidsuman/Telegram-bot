@@ -1362,7 +1362,8 @@ export default {
                     throw new Error('Index out of range');
                   }
                   list[idx] = trimmed;
-                  await putJSON(env.STATE, 'questions', list);
+                  cache.delete('questions'); // Clear cache when questions are updated
+            await putJSON(env.STATE, 'questions', list);
                   await env.STATE.delete('admin:edit:idx');
                   await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Question #${idx + 1} updated.`);
                 }
@@ -1918,32 +1919,53 @@ export default {
               ] };
                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `${header}\n${body}`, { reply_markup: kb });
              }
-           } else if (data.startsWith('ans:')) {
-            // MCQ answer - Optimized for speed
+                     } else if (data.startsWith('ans:')) {
+            // MCQ answer handler
             const [, qidStr, answer] = data.split(':');
             const qid = parseInt(qidStr);
             
-            // Get questions directly from main array
-            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            // Get questions - try cache first, then load from KV
+            let questions;
+            try {
+              questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+              console.log(`Processing answer for question ${qid}, total questions: ${questions.length}`);
+            } catch (error) {
+              console.error('Error loading questions:', error);
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Error loading questions', true);
+              return new Response('OK');
+            }
             
             if (qid >= 0 && qid < questions.length) {
               const question = questions[qid];
               
-              // Quick validation
-              if (!question?.question || !question?.options || !question?.answer || !question?.explanation) {
+              // Validate question data
+              if (!question || !question.question || !question.options || !question.answer || !question.explanation) {
+                console.error(`Invalid question data at index ${qid}:`, question);
                 await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question data corrupted', true);
                 return new Response('OK');
               }
               
               const isCorrect = answer === question.answer;
               
-              // Update stats and show popup in parallel for better performance
-              await Promise.all([
-                incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata'),
-                answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 
-                  `${isCorrect ? '✅ correct' : '❌ wrong'}\n\nAnswer: ${question.answer}\n\nExplanation: ${question.explanation}`, true)
-              ]);
+              // Show the answer popup immediately
+              try {
+                await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 
+                  `${isCorrect ? '✅ Correct!' : '❌ Wrong!'}
+
+Answer: ${question.answer}
+
+Explanation: ${question.explanation}`, 
+                  true);
+              } catch (error) {
+                console.error('Error sending callback answer:', error);
+              }
+              
+              // Update stats in background (don't wait)
+              incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata')
+                .catch(error => console.error('Error updating stats:', error));
+                
             } else {
+              console.error(`Question index ${qid} out of range (0-${questions.length - 1})`);
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question not found', true);
             }
           } else if (data === 'coupon:copy') {
