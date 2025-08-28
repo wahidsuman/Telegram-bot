@@ -2181,7 +2181,12 @@ export default {
               ]
             };
             
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, message, { reply_markup: keyboard });
+            // Edit the existing message instead of sending a new one
+            if (query.message?.message_id) {
+              await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId!, query.message.message_id, message, { reply_markup: keyboard });
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, message, { reply_markup: keyboard });
+            }
           } else if (data === 'admin:checkQ:close') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Closed');
             await env.STATE.delete('admin:checkQuestion:index');
@@ -2241,7 +2246,12 @@ export default {
               ]
             };
             
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, message, { reply_markup: keyboard });
+            // Edit the existing message instead of sending a new one
+            if (query.message?.message_id) {
+              await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId!, query.message.message_id, message, { reply_markup: keyboard });
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, message, { reply_markup: keyboard });
+            }
 
           } else if (data === 'admin:jumpToQuestion') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
@@ -2319,7 +2329,12 @@ export default {
                 ]
               };
               
+              // Edit the existing message instead of sending a new one
+            if (query.message?.message_id) {
+              await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId!, query.message.message_id, message, { reply_markup: keyboard });
+            } else {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, message, { reply_markup: keyboard });
+            }
             } else {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Invalid question index.');
             }
