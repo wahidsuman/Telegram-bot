@@ -214,6 +214,7 @@ async function copyMessage(token: string, fromChatId: string | number, messageId
 }
 
 async function answerCallbackQuery(token: string, queryId: string, text?: string, showAlert?: boolean): Promise<any> {
+  console.log('answerCallbackQuery called:', { queryId, text: text?.substring(0, 50), showAlert });
   const url = `https://api.telegram.org/bot${token}/answerCallbackQuery`;
   const body = {
     callback_query_id: queryId,
@@ -221,13 +222,25 @@ async function answerCallbackQuery(token: string, queryId: string, text?: string
     show_alert: showAlert || false
   };
   
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  
-  return response.json();
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    
+    const result = await response.json();
+    console.log('answerCallbackQuery result:', result);
+    
+    if (!result.ok) {
+      console.error('answerCallbackQuery failed:', result);
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('answerCallbackQuery error:', error);
+    throw error;
+  }
 }
 
 async function getFile(token: string, fileId: string): Promise<any> {
@@ -1720,48 +1733,68 @@ export default {
           }
         }
         } else if (update.callback_query) {
+          console.log('=== CALLBACK QUERY RECEIVED ===');
           const query = update.callback_query;
           const data = query.data || '';
+          console.log('Callback data:', data);
           const userId = query.from.id;
           const chatId = query.message?.chat.id;
           
-                    // Handle callbacks
+          // Handle callbacks
           
           // Check for answer callbacks FIRST (highest priority)
           if (data.startsWith('ans:')) {
-            console.log('Answer button clicked:', data);
-            // MCQ answer handler
-            const [, qidStr, answer] = data.split(':');
-            const qid = parseInt(qidStr);
+            console.log('>>> ANSWER CALLBACK DETECTED:', data);
             
-            console.log('Processing answer:', { qid, answer });
-            
-            // Get questions directly from main array
-            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
-            
-            if (qid >= 0 && qid < questions.length) {
-              const question = questions[qid];
+            try {
+              // MCQ answer handler
+              const [, qidStr, answer] = data.split(':');
+              const qid = parseInt(qidStr);
               
-              // Quick validation
-              if (!question?.question || !question?.options || !question?.answer || !question?.explanation) {
-                await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question data corrupted', true);
-                return new Response('OK');
-              }
+              console.log('Processing answer:', { qid, answer });
               
-              const isCorrect = answer === question.answer;
+              // Get questions directly from main array
+              const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+              console.log('Total questions:', questions.length);
               
-              // Send popup immediately
-              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 
-                `${isCorrect ? '✅ Correct!' : '❌ Wrong!'}\n\nAnswer: ${question.answer}\n\nExplanation: ${question.explanation}`, 
-                true);
-              
-              // Update stats in background
-              incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata')
-                .catch(err => console.error('Stats update error:', err));
+              if (qid >= 0 && qid < questions.length) {
+                const question = questions[qid];
+                console.log('Question found:', { qid, hasQuestion: !!question });
                 
-            } else {
-              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question not found', true);
+                // Quick validation
+                if (!question?.question || !question?.options || !question?.answer || !question?.explanation) {
+                  console.error('Question data incomplete:', { 
+                    hasQuestion: !!question?.question, 
+                    hasOptions: !!question?.options, 
+                    hasAnswer: !!question?.answer, 
+                    hasExplanation: !!question?.explanation 
+                  });
+                  await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question data corrupted', true);
+                  return new Response('OK');
+                }
+                
+                const isCorrect = answer === question.answer;
+                const popupText = `${isCorrect ? '✅ Correct!' : '❌ Wrong!'}\n\nAnswer: ${question.answer}\n\nExplanation: ${question.explanation}`;
+                
+                console.log('Sending popup:', { isCorrect, correctAnswer: question.answer, userAnswer: answer });
+                
+                // Send popup immediately
+                const result = await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popupText, true);
+                console.log('Popup sent, result:', result);
+                
+                // Update stats in background (don't await)
+                incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata')
+                  .catch(err => console.error('Stats update error:', err));
+                  
+              } else {
+                console.error('Question not found:', { qid, totalQuestions: questions.length });
+                await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question not found', true);
+              }
+            } catch (error) {
+              console.error('Error in answer callback handler:', error);
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Error processing answer', true);
             }
+            
             return new Response('OK');
             
           } else if (data === 'user:stats') {
