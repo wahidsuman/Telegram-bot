@@ -23,11 +23,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build check
-        run: npx wrangler deploy --dry-run
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
