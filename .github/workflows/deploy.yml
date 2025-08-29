@@ -1,4 +1,4 @@
-name: Deploy Cloudflare Worker
+name: Simple Deploy
 
 on:
   push:
@@ -8,40 +8,12 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
+      - run: npm ci
+      - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ef5bdf3d98fcdd074210212918b0776f
-          command: deploy
-          packageManager: npm
-          secrets: |
-            TELEGRAM_BOT_TOKEN
-            TARGET_GROUP_ID
-            TARGET_CHANNEL_ID
-            TARGET_DISCUSSION_GROUP_ID
-            ADMIN_CHAT_ID
-            WEBHOOK_SECRET
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TARGET_GROUP_ID: ${{ secrets.TARGET_GROUP_ID }}
-          TARGET_CHANNEL_ID: ${{ secrets.TARGET_CHANNEL_ID }}
-          TARGET_DISCUSSION_GROUP_ID: ${{ secrets.TARGET_DISCUSSION_GROUP_ID }}
-          ADMIN_CHAT_ID: ${{ secrets.ADMIN_CHAT_ID }}
-          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
-
