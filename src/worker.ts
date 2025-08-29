@@ -442,27 +442,37 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
   
   // Post MCQ to all targets EXCEPT discussion group
   let postedCount = 0;
+  const discussionGroupIdStr = discussionGroupId ? String(discussionGroupId) : null;
+  
   for (const targetId of allTargets) {
-    if (targetId !== discussionGroupId) {
-      try {
-        await sendMessage(token, targetId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
-        postedCount++;
-        console.log(`Posted MCQ to: ${targetId}`);
-      } catch (error) {
-        console.error(`Failed to post to ${targetId}:`, error);
-      }
+    // Skip if this is the discussion group
+    if (discussionGroupIdStr && String(targetId) === discussionGroupIdStr) {
+      console.log(`Skipping discussion group: ${targetId}`);
+      continue;
+    }
+    
+    // Post MCQ to this target
+    try {
+      await sendMessage(token, targetId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
+      postedCount++;
+      console.log(`Posted MCQ to: ${targetId}`);
+    } catch (error) {
+      console.error(`Failed to post to ${targetId}:`, error);
     }
   }
   
-  // Post ONLY explanation to discussion group (no question, no options)
-  if (discussionGroupId) {
+  // Post ONLY explanation to discussion group (-1002904085857)
+  // STRICT CHECK: Only post if discussionGroupId is exactly the configured value
+  if (discussionGroupIdStr && discussionGroupIdStr === '-1002904085857') {
     const explanationOnly = `📚 Question ${currentIndex + 1}\n\n${question.explanation}`;
     try {
-      await sendMessage(token, discussionGroupId, explanationOnly);
-      console.log(`Posted explanation to discussion group: ${discussionGroupId}`);
+      await sendMessage(token, discussionGroupIdStr, explanationOnly);
+      console.log(`Posted explanation to discussion group: ${discussionGroupIdStr}`);
     } catch (error) {
       console.error(`Failed to post explanation to discussion group:`, error);
     }
+  } else {
+    console.log(`Discussion group not configured or not matching expected ID. Got: ${discussionGroupIdStr}`);
   }
   
   // Save updated targets list
@@ -1212,11 +1222,13 @@ export default {
             const allTargets = await getJSON<string[]>(env.STATE, 'bot:targets', []);
             const chatIdStr = String(chatId);
             
-            // Don't add discussion group to regular targets
-            if (chatIdStr !== env.TARGET_DISCUSSION_GROUP_ID && !allTargets.includes(chatIdStr)) {
+            // STRICT CHECK: Don't add discussion group to regular targets
+            if (chatIdStr !== '-1002904085857' && chatIdStr !== env.TARGET_DISCUSSION_GROUP_ID && !allTargets.includes(chatIdStr)) {
               allTargets.push(chatIdStr);
               await putJSON(env.STATE, 'bot:targets', allTargets);
               console.log(`Added new target: ${chatIdStr} (${message.chat.title || 'Unknown'})`);
+            } else if (chatIdStr === '-1002904085857') {
+              console.log(`Skipped adding discussion group to targets: ${chatIdStr}`);
             }
           }
           
@@ -1235,14 +1247,22 @@ export default {
           // Admin command to list all targets
           if (message.text === '/targets' && String(chatId) === env.ADMIN_CHAT_ID) {
             const allTargets = await getJSON<string[]>(env.STATE, 'bot:targets', []);
-            const targetsList = allTargets.length > 0 
-              ? allTargets.map((t, i) => `${i + 1}. ${t}`).join('\n')
+            
+            // Clean up: Remove discussion group if it's in targets
+            const cleanedTargets = allTargets.filter(t => t !== '-1002904085857' && t !== env.TARGET_DISCUSSION_GROUP_ID);
+            if (cleanedTargets.length !== allTargets.length) {
+              await putJSON(env.STATE, 'bot:targets', cleanedTargets);
+              console.log('Removed discussion group from targets list');
+            }
+            
+            const targetsList = cleanedTargets.length > 0 
+              ? cleanedTargets.map((t, i) => `${i + 1}. ${t}`).join('\n')
               : 'No targets registered yet';
             
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
               `📋 **All MCQ Targets:**\n\n${targetsList}\n\n` +
-              `Discussion Group: ${env.TARGET_DISCUSSION_GROUP_ID || 'Not set'}\n\n` +
-              `Total: ${allTargets.length} groups/channels`, 
+              `Discussion Group: -1002904085857 (explanations only)\n\n` +
+              `Total: ${cleanedTargets.length} groups/channels for MCQs`, 
               { parse_mode: 'Markdown' });
             return new Response('OK');
           }
