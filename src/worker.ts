@@ -1262,6 +1262,21 @@ export default {
             }
           }
           
+          // Debug command to test posting
+          if (message.text === '/testpost' && String(chatId) === env.ADMIN_CHAT_ID) {
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '🧪 Testing post to discussion group...');
+            
+            try {
+              const testMessage = `🧪 TEST: This is a test message to discussion group -1002904085857`;
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, '-1002904085857', testMessage);
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ Test message sent to discussion group -1002904085857');
+            } catch (error) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Failed to send to discussion group: ${error}`);
+            }
+            
+            return new Response('OK');
+          }
+          
           // Handle /groupid command to help identify discussion group
           if (message.text === '/groupid') {
             const groupInfo = `📍 Chat Information:\n\n` +
