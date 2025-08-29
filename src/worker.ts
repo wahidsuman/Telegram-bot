@@ -445,31 +445,61 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
     ]
   };
   
+  // DEBUG: Log all targets
+  console.log('All targets before filtering:', allTargets);
+  console.log('Discussion group ID:', DISCUSSION_GROUP_ID);
+  
   // Post MCQ to all targets EXCEPT discussion group
   let postedCount = 0;
+  let postedToChannels = [];
+  
   for (const targetId of allTargets) {
     // Double check - never post MCQ to discussion group
-    if (targetId === DISCUSSION_GROUP_ID) {
-      console.log(`Skipping discussion group in loop: ${targetId}`);
+    if (targetId === DISCUSSION_GROUP_ID || targetId === '-1002904085857') {
+      console.log(`SKIPPING DISCUSSION GROUP: ${targetId}`);
       continue;
     }
     
+    // Check if it's posting explanation to wrong place
+    const isChannel = targetId.startsWith('-100');
+    
     try {
+      // For now, let's check what we're posting where
+      console.log(`POSTING MCQ TO: ${targetId} (isChannel: ${isChannel})`);
+      
+      // Only post MCQ, never explanation
       await sendMessage(token, targetId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
       postedCount++;
-      console.log(`Posted MCQ to: ${targetId}`);
+      postedToChannels.push(targetId);
+      
     } catch (error) {
       console.error(`Failed to post to ${targetId}:`, error);
     }
   }
   
+  console.log('Posted MCQ to these channels/groups:', postedToChannels);
+  
   // Post ONLY explanation to discussion group (hardcoded ID)
+  // FORCE post to exact ID
+  const EXACT_DISCUSSION_ID = '-1002904085857';
   const explanationOnly = `📚 Question ${currentIndex + 1}\n\n${question.explanation}`;
+  
+  console.log(`ATTEMPTING TO POST EXPLANATION TO: ${EXACT_DISCUSSION_ID}`);
+  
   try {
-    await sendMessage(token, DISCUSSION_GROUP_ID, explanationOnly);
-    console.log(`Posted explanation to discussion group: ${DISCUSSION_GROUP_ID}`);
+    const result = await sendMessage(token, EXACT_DISCUSSION_ID, explanationOnly);
+    console.log(`SUCCESS: Posted explanation to discussion group ${EXACT_DISCUSSION_ID}`, result);
   } catch (error) {
-    console.error(`Failed to post explanation to discussion group:`, error);
+    console.error(`FAILED to post explanation to discussion group ${EXACT_DISCUSSION_ID}:`, error);
+    // Try with number format
+    try {
+      const numericId = -1002904085857;
+      console.log(`RETRY with numeric ID: ${numericId}`);
+      const result2 = await sendMessage(token, numericId, explanationOnly);
+      console.log(`SUCCESS on retry:`, result2);
+    } catch (error2) {
+      console.error(`FAILED on retry too:`, error2);
+    }
   }
   
   // Save cleaned targets list
