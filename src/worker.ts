@@ -1262,18 +1262,33 @@ export default {
             }
           }
           
-          // Debug command to test posting
-          if (message.text === '/testpost' && String(chatId) === env.ADMIN_CHAT_ID) {
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '🧪 Testing post to discussion group...');
+          // Debug command to test posting (works for any admin)
+          if (message.text === '/testpost') {
+            const isAdmin = String(chatId) === env.ADMIN_CHAT_ID || 
+              (env.ADMIN_USERNAME && message.from?.username && 
+               message.from.username.toLowerCase() === env.ADMIN_USERNAME.toLowerCase());
             
-            try {
-              const testMessage = `🧪 TEST: This is a test message to discussion group -1002904085857`;
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, '-1002904085857', testMessage);
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ Test message sent to discussion group -1002904085857');
-            } catch (error) {
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Failed to send to discussion group: ${error}`);
+            if (!isAdmin) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ This command is for admins only');
+              return new Response('OK');
             }
             
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '🧪 Testing post to discussion group -1002904085857...');
+            
+            try {
+              const testMessage = `🧪 TEST MESSAGE at ${new Date().toISOString()}\n\nThis is a test to discussion group -1002904085857`;
+              const result = await sendMessage(env.TELEGRAM_BOT_TOKEN, '-1002904085857', testMessage);
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Success! Message sent to discussion group.\n\nResult: ${JSON.stringify(result)}`);
+            } catch (error) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Failed to send to discussion group!\n\nError: ${JSON.stringify(error)}\n\nMake sure the bot is added to group -1002904085857`);
+            }
+            
+            return new Response('OK');
+          }
+          
+          // Simple test command
+          if (message.text === '/test') {
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Bot is working!\n\nYour chat ID: ${chatId}\nYour username: ${message.from?.username || 'none'}\nChat type: ${message.chat.type}`);
             return new Response('OK');
           }
           
