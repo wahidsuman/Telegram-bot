@@ -1280,12 +1280,12 @@ export default {
               `• TARGET_CHANNEL_ID: ${env.TARGET_CHANNEL_ID || 'NOT SET'}\n` +
               `• TARGET_DISCUSSION_GROUP_ID: ${env.TARGET_DISCUSSION_GROUP_ID || 'NOT SET'}\n` +
               `• ADMIN_CHAT_ID: ${env.ADMIN_CHAT_ID || 'NOT SET'}\n\n` +
-              `**Hardcoded Discussion Group:** -1002904085857\n\n` +
               `**Current State:**\n` +
               `• Current question index: ${currentIndex}\n` +
               `• Active targets: ${allTargets.length}\n` +
               `• Target IDs: ${allTargets.join(', ') || 'None'}\n\n` +
-              `**Important:** The bot will ONLY post explanations to -1002904085857 regardless of env vars.`);
+              `**Note:** MCQs go to all targets EXCEPT discussion group\n` +
+              `**Note:** Explanations go ONLY to TARGET_DISCUSSION_GROUP_ID`);
             return new Response('OK');
           }
           
@@ -1327,7 +1327,7 @@ export default {
             const allTargets = await getJSON<string[]>(env.STATE, 'bot:targets', []);
             
             // Clean up: Remove discussion group if it's in targets
-            const cleanedTargets = allTargets.filter(t => t !== '-1002904085857' && t !== env.TARGET_DISCUSSION_GROUP_ID);
+            const cleanedTargets = allTargets.filter(t => t !== env.TARGET_DISCUSSION_GROUP_ID);
             if (cleanedTargets.length !== allTargets.length) {
               await putJSON(env.STATE, 'bot:targets', cleanedTargets);
               console.log('Removed discussion group from targets list');
@@ -1339,7 +1339,7 @@ export default {
             
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
               `📋 **All MCQ Targets:**\n\n${targetsList}\n\n` +
-              `Discussion Group: -1002904085857 (explanations only)\n\n` +
+              `Discussion Group: ${env.TARGET_DISCUSSION_GROUP_ID || 'NOT SET'} (explanations only)\n\n` +
               `Total: ${cleanedTargets.length} groups/channels for MCQs`, 
               { parse_mode: 'Markdown' });
             return new Response('OK');
