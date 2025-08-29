@@ -33,4 +33,8 @@ jobs:
           accountId: ef5bdf3d98fcdd074210212918b0776f
           command: deploy
           packageManager: npm
+          secrets: |
+            TARGET_DISCUSSION_GROUP_ID
+        env:
+          TARGET_DISCUSSION_GROUP_ID: ${{ secrets.TARGET_DISCUSSION_GROUP_ID }}
 
