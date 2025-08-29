@@ -393,6 +393,8 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
 }
 
 async function postNextToAll(kv: KVNamespace, token: string, groupId: string, extraChannelId?: string, discussionGroupId?: string): Promise<void> {
+  console.log('postNextToAll called with:', { groupId, extraChannelId, discussionGroupId });
+  
   const questions = await getJSON<Question[]>(kv, 'questions', []);
   
   if (questions.length === 0) {

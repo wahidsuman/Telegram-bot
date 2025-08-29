@@ -34,7 +34,17 @@ jobs:
           command: deploy
           packageManager: npm
           secrets: |
+            TELEGRAM_BOT_TOKEN
+            TARGET_GROUP_ID
+            TARGET_CHANNEL_ID
             TARGET_DISCUSSION_GROUP_ID
+            ADMIN_CHAT_ID
+            WEBHOOK_SECRET
         env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TARGET_GROUP_ID: ${{ secrets.TARGET_GROUP_ID }}
+          TARGET_CHANNEL_ID: ${{ secrets.TARGET_CHANNEL_ID }}
           TARGET_DISCUSSION_GROUP_ID: ${{ secrets.TARGET_DISCUSSION_GROUP_ID }}
+          ADMIN_CHAT_ID: ${{ secrets.ADMIN_CHAT_ID }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
 
