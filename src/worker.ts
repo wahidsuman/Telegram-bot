@@ -448,66 +448,71 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
     ]
   };
   
-  // STEP 1: Post MCQ to all groups/channels (NOT discussion group)
+  // STEP 1: Post MCQ to all groups/channels EXCEPT discussion group
   console.log('=== POSTING MCQs ===');
-  console.log('Targets for MCQ:', allTargets);
   
-  let mcqPostedTo = [];
+  // Post to main group if specified and not discussion group
+  if (groupId && groupId !== '-1002904085857') {
+    try {
+      console.log(`Posting MCQ to group: ${groupId}`);
+      await sendMessage(token, groupId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
+    } catch (error) {
+      console.error(`Failed to post MCQ to group ${groupId}:`, error);
+    }
+  }
   
+  // Post to channel if specified and not discussion group
+  if (extraChannelId && extraChannelId !== '-1002904085857') {
+    try {
+      console.log(`Posting MCQ to channel: ${extraChannelId}`);
+      await sendMessage(token, extraChannelId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
+    } catch (error) {
+      console.error(`Failed to post MCQ to channel ${extraChannelId}:`, error);
+    }
+  }
+  
+  // Post to any other targets in the list (but NOT discussion group)
   for (const targetId of allTargets) {
-    // NEVER post MCQ to discussion group
-    if (targetId === '-1002904085857' || targetId === REAL_DISCUSSION_GROUP) {
-      console.log(`Skipping discussion group for MCQ: ${targetId}`);
+    if (targetId === '-1002904085857') {
+      console.log(`Skipping discussion group: ${targetId}`);
       continue;
+    }
+    if (targetId === groupId || targetId === extraChannelId) {
+      continue; // Already posted above
     }
     
     try {
-      console.log(`Posting MCQ to: ${targetId}`);
+      console.log(`Posting MCQ to additional target: ${targetId}`);
       await sendMessage(token, targetId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
-      mcqPostedTo.push(targetId);
     } catch (error) {
       console.error(`Failed to post MCQ to ${targetId}:`, error);
     }
   }
   
-  console.log('MCQs posted to:', mcqPostedTo);
-  
-  // STEP 2: Post explanation ONLY to discussion group - completely separate
-  console.log('=== POSTING EXPLANATION ===');
+  // STEP 2: Post explanation ONLY to discussion group -1002904085857
+  console.log('=== POSTING EXPLANATION TO DISCUSSION GROUP ONLY ===');
   const explanationText = `📚 Question ${currentIndex + 1}\n\n${question.explanation}`;
   
-  // Try multiple times to ensure it posts to discussion group
-  let explanationPosted = false;
-  
-  // Try 1: String format
   try {
-    console.log('Attempting to post explanation to: -1002904085857 (string)');
+    console.log('Posting explanation to discussion group: -1002904085857');
     await sendMessage(token, '-1002904085857', explanationText);
     console.log('SUCCESS: Explanation posted to discussion group');
-    explanationPosted = true;
   } catch (error) {
-    console.error('Failed with string ID:', error);
-  }
-  
-  // Try 2: Number format if string failed
-  if (!explanationPosted) {
+    console.error('FAILED to post explanation to discussion group:', error);
+    
+    // Try with number format as fallback
     try {
-      console.log('Attempting to post explanation to: -1002904085857 (number)');
+      console.log('Retrying with number format...');
       await sendMessage(token, -1002904085857, explanationText);
-      console.log('SUCCESS: Explanation posted to discussion group (number format)');
-      explanationPosted = true;
-    } catch (error) {
-      console.error('Failed with number ID too:', error);
+      console.log('SUCCESS on retry with number format');
+    } catch (error2) {
+      console.error('Failed on retry too:', error2);
     }
-  }
-  
-  if (!explanationPosted) {
-    console.error('CRITICAL: Could not post explanation to discussion group -1002904085857');
   }
   
   // Save cleaned targets list
   await putJSON(kv, 'bot:targets', allTargets);
-  console.log(`Summary: MCQs posted to ${mcqPostedTo.length} targets, Explanation posted: ${explanationPosted}`);
+  console.log(`=== POSTING COMPLETE ===`);
 }
 
 function validateQuestion(q: any): q is Question {
