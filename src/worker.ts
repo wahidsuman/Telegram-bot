@@ -427,23 +427,33 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
   // Get ALL groups/channels the bot knows about
   let allTargets = await getJSON<string[]>(kv, 'bot:targets', []);
   
-  // Add groupId and channelId if provided
-  if (groupId && !allTargets.includes(groupId)) {
+  // Add groupId and channelId if provided (but NOT discussion group)
+  if (groupId && !allTargets.includes(groupId) && groupId !== discussionGroupId) {
     allTargets.push(groupId);
   }
-  if (extraChannelId && !allTargets.includes(extraChannelId)) {
+  if (extraChannelId && !allTargets.includes(extraChannelId) && extraChannelId !== discussionGroupId) {
     allTargets.push(extraChannelId);
+  }
+  
+  // Remove discussion group from targets if it somehow got added
+  if (discussionGroupId) {
+    allTargets = allTargets.filter(id => id !== discussionGroupId);
   }
   
   // Save targets
   await putJSON(kv, 'bot:targets', allTargets);
   
+  // Debug logging
+  console.log(`Discussion Group ID: ${discussionGroupId}`);
+  console.log(`All targets: ${allTargets.join(', ')}`);
+  
   // POST MCQs TO ALL TARGETS (except discussion group if specified)
-  console.log(`Posting MCQ #${currentIndex + 1} to ${allTargets.length} groups/channels`);
+  console.log(`Posting MCQ #${currentIndex + 1} to targets (excluding discussion group)`);
   
   for (const targetId of allTargets) {
     // Skip discussion group for MCQs
     if (discussionGroupId && targetId === discussionGroupId) {
+      console.log(`⏭️ Skipping MCQ for discussion group: ${targetId}`);
       continue;
     }
     
@@ -456,15 +466,22 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
   }
   
   // POST EXPLANATION TO DISCUSSION GROUP ONLY (if specified)
-  if (discussionGroupId && question.explanation && question.explanation.trim() !== '') {
-    const explanationText = `📚 <b>Question ${currentIndex + 1} - Explanation</b>\n\n${question.explanation}`;
-    
-    try {
-      await sendMessage(token, discussionGroupId, explanationText, { parse_mode: 'HTML' });
-      console.log(`✅ Explanation posted to discussion group: ${discussionGroupId}`);
-    } catch (error) {
-      console.error(`❌ Failed to post explanation to discussion group:`, error);
+  if (discussionGroupId) {
+    console.log(`Checking explanation for discussion group ${discussionGroupId}...`);
+    if (question.explanation && question.explanation.trim() !== '') {
+      const explanationText = `📚 <b>Question ${currentIndex + 1} - Explanation</b>\n\n${question.explanation}`;
+      
+      try {
+        await sendMessage(token, discussionGroupId, explanationText, { parse_mode: 'HTML' });
+        console.log(`✅ Explanation posted to discussion group: ${discussionGroupId}`);
+      } catch (error) {
+        console.error(`❌ Failed to post explanation to discussion group ${discussionGroupId}:`, error);
+      }
+    } else {
+      console.log(`⚠️ No explanation available for question ${currentIndex + 1}`);
     }
+  } else {
+    console.log('⚠️ No discussion group ID provided');
   }
   
   console.log(`✅ Posting complete: MCQs to ${allTargets.length} targets`);
