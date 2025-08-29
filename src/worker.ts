@@ -491,22 +491,44 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
   
   // STEP 2: Post explanation ONLY to discussion group -1002904085857
   console.log('=== POSTING EXPLANATION TO DISCUSSION GROUP ONLY ===');
-  const explanationText = `📚 Question ${currentIndex + 1}\n\n${question.explanation}`;
   
-  try {
-    console.log('Posting explanation to discussion group: -1002904085857');
-    await sendMessage(token, '-1002904085857', explanationText);
-    console.log('SUCCESS: Explanation posted to discussion group');
-  } catch (error) {
-    console.error('FAILED to post explanation to discussion group:', error);
+  // Check if explanation exists and is valid
+  if (!question.explanation || question.explanation.trim() === '') {
+    console.log('No explanation available for question', currentIndex + 1);
+  } else {
+    // Truncate explanation if it's too long (Telegram limit is 4096 chars)
+    let explanationContent = question.explanation;
+    if (explanationContent.length > 4000) {
+      explanationContent = explanationContent.substring(0, 3997) + '...';
+      console.log('Truncated long explanation from', question.explanation.length, 'to 4000 chars');
+    }
     
-    // Try with number format as fallback
+    const explanationText = `📚 Question ${currentIndex + 1}\n\n${explanationContent}`;
+    
     try {
-      console.log('Retrying with number format...');
-      await sendMessage(token, -1002904085857, explanationText);
-      console.log('SUCCESS on retry with number format');
-    } catch (error2) {
-      console.error('Failed on retry too:', error2);
+      console.log(`Posting explanation to discussion group: -1002904085857 (length: ${explanationText.length})`);
+      await sendMessage(token, '-1002904085857', explanationText);
+      console.log('SUCCESS: Explanation posted to discussion group');
+    } catch (error) {
+      console.error('FAILED to post explanation to discussion group:', error);
+      
+      // Try with shortened explanation if it failed
+      try {
+        const shortExplanation = `📚 Question ${currentIndex + 1}\n\n${explanationContent.substring(0, 500)}...\n\n[Explanation truncated due to length]`;
+        console.log('Retrying with shortened explanation...');
+        await sendMessage(token, '-1002904085857', shortExplanation);
+        console.log('SUCCESS with shortened explanation');
+      } catch (error2) {
+        console.error('Failed even with short explanation:', error2);
+        
+        // Last resort - just post question number
+        try {
+          await sendMessage(token, '-1002904085857', `📚 Question ${currentIndex + 1}\n\n[Explanation not available]`);
+          console.log('Posted question number only');
+        } catch (error3) {
+          console.error('Could not post anything to discussion group:', error3);
+        }
+      }
     }
   }
   
