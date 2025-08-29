@@ -393,44 +393,22 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
 }
 
 async function postNextToAll(kv: KVNamespace, token: string, groupId: string, extraChannelId?: string, discussionGroupId?: string): Promise<void> {
-  console.log('postNextToAll called with:', { groupId, extraChannelId, discussionGroupId });
+  const DISCUSSION_GROUP_ID = '-1002904085857'; // HARDCODED - explanations ONLY go here
   
   const questions = await getJSON<Question[]>(kv, 'questions', []);
-  
   if (questions.length === 0) {
     console.log('No questions available');
     return;
   }
   
-  // IGNORE the discussionGroupId parameter - we'll use hardcoded value
-  const REAL_DISCUSSION_GROUP = '-1002904085857';
-  
-  // Get all bot targets (groups and channels)
-  let allTargets = await getJSON<string[]>(kv, 'bot:targets', []);
-  
-  // Clean targets - remove discussion group if present
-  allTargets = allTargets.filter(t => t !== REAL_DISCUSSION_GROUP && t !== '-1002904085857');
-  
-  // Add the main group to targets if not already there (but NOT if it's the discussion group)
-  if (groupId && groupId !== REAL_DISCUSSION_GROUP && groupId !== '-1002904085857' && !allTargets.includes(groupId)) {
-    allTargets.push(groupId);
-  }
-  
-  // Add channel ONLY if it's NOT the discussion group
-  if (extraChannelId && extraChannelId !== REAL_DISCUSSION_GROUP && extraChannelId !== '-1002904085857' && !allTargets.includes(extraChannelId)) {
-    allTargets.push(extraChannelId);
-  }
-  
-  // Use a global index for all targets
+  // Get global question index
   const indexKey = `idx:global`;
   const currentIndex = await getJSON<number>(kv, indexKey, 0);
-  
   const question = questions[currentIndex];
   const nextIndex = (currentIndex + 1) % questions.length;
-  
   await putJSON(kv, indexKey, nextIndex);
   
-  // MCQ text and keyboard for regular groups/channels
+  // MCQ text and keyboard
   const text = `<b>🧠 Hourly MCQ #${currentIndex + 1}</b>\n\n<b>${esc(question.question)}</b>\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}`;
   
   const keyboard = {
@@ -448,93 +426,69 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
     ]
   };
   
-  // STEP 1: Post MCQ to all groups/channels EXCEPT discussion group
-  console.log('=== POSTING MCQs ===');
+  // Get ALL groups/channels the bot knows about
+  let allTargets = await getJSON<string[]>(kv, 'bot:targets', []);
   
-  // Post to main group if specified and not discussion group
-  if (groupId && groupId !== '-1002904085857') {
-    try {
-      console.log(`Posting MCQ to group: ${groupId}`);
-      await sendMessage(token, groupId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
-    } catch (error) {
-      console.error(`Failed to post MCQ to group ${groupId}:`, error);
-    }
+  // Add groupId and channelId if provided
+  if (groupId && !allTargets.includes(groupId)) {
+    allTargets.push(groupId);
+  }
+  if (extraChannelId && !allTargets.includes(extraChannelId)) {
+    allTargets.push(extraChannelId);
   }
   
-  // Post to channel if specified and not discussion group
-  if (extraChannelId && extraChannelId !== '-1002904085857') {
-    try {
-      console.log(`Posting MCQ to channel: ${extraChannelId}`);
-      await sendMessage(token, extraChannelId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
-    } catch (error) {
-      console.error(`Failed to post MCQ to channel ${extraChannelId}:`, error);
-    }
-  }
+  // REMOVE discussion group from targets - it should NEVER get MCQs
+  allTargets = allTargets.filter(id => id !== DISCUSSION_GROUP_ID && id !== '-1002904085857');
   
-  // Post to any other targets in the list (but NOT discussion group)
+  // Save cleaned targets
+  await putJSON(kv, 'bot:targets', allTargets);
+  
+  // POST MCQs TO ALL TARGETS (except discussion group)
+  console.log(`Posting MCQ #${currentIndex + 1} to ${allTargets.length} groups/channels`);
+  
   for (const targetId of allTargets) {
-    if (targetId === '-1002904085857') {
-      console.log(`Skipping discussion group: ${targetId}`);
+    // FINAL CHECK - never post MCQ to discussion group
+    if (targetId === DISCUSSION_GROUP_ID || targetId === '-1002904085857') {
       continue;
-    }
-    if (targetId === groupId || targetId === extraChannelId) {
-      continue; // Already posted above
     }
     
     try {
-      console.log(`Posting MCQ to additional target: ${targetId}`);
       await sendMessage(token, targetId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
+      console.log(`✅ MCQ posted to: ${targetId}`);
     } catch (error) {
-      console.error(`Failed to post MCQ to ${targetId}:`, error);
+      console.error(`❌ Failed to post MCQ to ${targetId}:`, error);
     }
   }
   
-  // STEP 2: Post explanation ONLY to discussion group -1002904085857
-  console.log('=== POSTING EXPLANATION TO DISCUSSION GROUP ONLY ===');
-  
-  // Check if explanation exists and is valid
-  if (!question.explanation || question.explanation.trim() === '') {
-    console.log('No explanation available for question', currentIndex + 1);
-  } else {
-    // Truncate explanation if it's too long (Telegram limit is 4096 chars)
+  // POST EXPLANATION ONLY TO DISCUSSION GROUP
+  if (question.explanation && question.explanation.trim() !== '') {
     let explanationContent = question.explanation;
+    
+    // Truncate if too long (Telegram limit is 4096 chars)
     if (explanationContent.length > 4000) {
       explanationContent = explanationContent.substring(0, 3997) + '...';
-      console.log('Truncated long explanation from', question.explanation.length, 'to 4000 chars');
     }
     
     const explanationText = `📚 Question ${currentIndex + 1}\n\n${explanationContent}`;
     
     try {
-      console.log(`Posting explanation to discussion group: -1002904085857 (length: ${explanationText.length})`);
-      await sendMessage(token, '-1002904085857', explanationText);
-      console.log('SUCCESS: Explanation posted to discussion group');
+      await sendMessage(token, DISCUSSION_GROUP_ID, explanationText);
+      console.log(`✅ Explanation posted to discussion group: ${DISCUSSION_GROUP_ID}`);
     } catch (error) {
-      console.error('FAILED to post explanation to discussion group:', error);
-      
-      // Try with shortened explanation if it failed
+      // Try shorter version if failed
       try {
-        const shortExplanation = `📚 Question ${currentIndex + 1}\n\n${explanationContent.substring(0, 500)}...\n\n[Explanation truncated due to length]`;
-        console.log('Retrying with shortened explanation...');
-        await sendMessage(token, '-1002904085857', shortExplanation);
-        console.log('SUCCESS with shortened explanation');
+        const shortText = `📚 Question ${currentIndex + 1}\n\n${explanationContent.substring(0, 500)}...`;
+        await sendMessage(token, DISCUSSION_GROUP_ID, shortText);
+        console.log('✅ Posted shortened explanation to discussion group');
       } catch (error2) {
-        console.error('Failed even with short explanation:', error2);
-        
-        // Last resort - just post question number
-        try {
-          await sendMessage(token, '-1002904085857', `📚 Question ${currentIndex + 1}\n\n[Explanation not available]`);
-          console.log('Posted question number only');
-        } catch (error3) {
-          console.error('Could not post anything to discussion group:', error3);
-        }
+        console.error('❌ Could not post explanation to discussion group:', error2);
       }
     }
+  } else {
+    console.log('No explanation available for question', currentIndex + 1);
   }
   
-  // Save cleaned targets list
-  await putJSON(kv, 'bot:targets', allTargets);
-  console.log(`=== POSTING COMPLETE ===`);
+  console.log(`✅ Posting complete: MCQs to ${allTargets.length} targets, Explanation to discussion group`);
 }
 
 function validateQuestion(q: any): q is Question {
