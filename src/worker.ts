@@ -397,7 +397,8 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
   console.log('postNextToAll called with:', {
     groupId,
     extraChannelId,
-    discussionGroupId
+    discussionGroupId,
+    areChannelAndDiscussionSame: extraChannelId === discussionGroupId
   });
   
   const questions = await getJSON<Question[]>(kv, 'questions', []);
@@ -451,11 +452,13 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
   await putJSON(kv, 'bot:targets', allTargets);
   
   // POST MCQs TO ALL TARGETS (except discussion group)
-  console.log(`Posting MCQ #${currentIndex + 1} to ${allTargets.length} groups/channels (excluding discussion group)`);
+  console.log(`Posting MCQ #${currentIndex + 1} to ${allTargets.length} groups/channels (excluding discussion group: ${discussionGroupId})`);
+  console.log(`Targets for MCQ: ${allTargets.join(', ')}`);
   
   for (const targetId of allTargets) {
     // Skip discussion group for MCQs
     if (discussionGroupId && targetId === discussionGroupId) {
+      console.log(`⏭️ Skipping MCQ for discussion group: ${targetId}`);
       continue;
     }
     
@@ -469,6 +472,7 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
   
   // POST EXPLANATION TO DISCUSSION GROUP ONLY
   if (discussionGroupId && question.explanation && question.explanation.trim() !== '') {
+    console.log(`Posting explanation ONLY to discussion group: ${discussionGroupId}`);
     const explanationText = `📚 <b>Question ${currentIndex + 1} - Explanation</b>\n\n${question.explanation}`;
     
     try {
@@ -477,6 +481,8 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
     } catch (error) {
       console.error(`❌ Failed to post explanation to discussion group:`, error);
     }
+  } else {
+    console.log(`No explanation to post (discussionGroupId: ${discussionGroupId}, has explanation: ${!!question.explanation})`);
   }
   
   console.log(`✅ Posting complete: MCQs to ${allTargets.length} targets, Explanation to discussion group`);
@@ -1334,6 +1340,8 @@ export default {
             const indexKey = `idx:global`;
             const currentIndex = await getJSON<number>(env.STATE, indexKey, 0);
             
+            const isDuplicate = env.TARGET_CHANNEL_ID === env.TARGET_DISCUSSION_GROUP_ID;
+            
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
               `🔧 **Debug Info**\n\n` +
               `**Environment Variables:**\n` +
@@ -1341,6 +1349,7 @@ export default {
               `• TARGET_CHANNEL_ID: ${env.TARGET_CHANNEL_ID || 'NOT SET'}\n` +
               `• TARGET_DISCUSSION_GROUP_ID: ${env.TARGET_DISCUSSION_GROUP_ID || 'NOT SET'}\n` +
               `• ADMIN_CHAT_ID: ${env.ADMIN_CHAT_ID || 'NOT SET'}\n\n` +
+              `${isDuplicate ? '⚠️ **WARNING: TARGET_CHANNEL_ID and TARGET_DISCUSSION_GROUP_ID are the SAME!**\n\n' : ''}` +
               `**Current State:**\n` +
               `• Current question index: ${currentIndex}\n` +
               `• Active targets: ${allTargets.length}\n` +
