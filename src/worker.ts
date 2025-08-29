@@ -1319,6 +1319,27 @@ export default {
             return new Response('OK');
           }
           
+          // Check specific question
+          if (message.text?.startsWith('/checkq ') && String(chatId) === env.ADMIN_CHAT_ID) {
+            const qNum = parseInt(message.text.split(' ')[1]) - 1;
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            
+            if (qNum >= 0 && qNum < questions.length) {
+              const q = questions[qNum];
+              const info = `📋 Question ${qNum + 1} Info:\n\n` +
+                `Question length: ${q.question?.length || 0}\n` +
+                `Explanation length: ${q.explanation?.length || 0}\n` +
+                `Has options: ${!!q.options}\n` +
+                `Answer: ${q.answer || 'missing'}\n\n` +
+                `First 200 chars of explanation:\n${q.explanation?.substring(0, 200) || 'No explanation'}`;
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, info);
+            } else {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `Question ${qNum + 1} not found`);
+            }
+            return new Response('OK');
+          }
+          
           // Handle /groupid command to help identify discussion group
           if (message.text === '/groupid') {
             const groupInfo = `📍 Chat Information:\n\n` +
