@@ -393,9 +393,7 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
 }
 
 async function postNextToAll(kv: KVNamespace, token: string, groupId: string, extraChannelId?: string, discussionGroupId?: string): Promise<void> {
-  const DISCUSSION_GROUP_ID = '-1002904085857'; // Hardcoded discussion group
-  
-  console.log('postNextToAll called');
+  console.log('postNextToAll called with:', { groupId, extraChannelId, discussionGroupId });
   
   const questions = await getJSON<Question[]>(kv, 'questions', []);
   
@@ -404,17 +402,22 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
     return;
   }
   
+  // IGNORE the discussionGroupId parameter - we'll use hardcoded value
+  const REAL_DISCUSSION_GROUP = '-1002904085857';
+  
   // Get all bot targets (groups and channels)
   let allTargets = await getJSON<string[]>(kv, 'bot:targets', []);
   
   // Clean targets - remove discussion group if present
-  allTargets = allTargets.filter(t => t !== DISCUSSION_GROUP_ID);
+  allTargets = allTargets.filter(t => t !== REAL_DISCUSSION_GROUP && t !== '-1002904085857');
   
-  // Add the main group and channel to targets if not already there
-  if (groupId && groupId !== DISCUSSION_GROUP_ID && !allTargets.includes(groupId)) {
+  // Add the main group to targets if not already there (but NOT if it's the discussion group)
+  if (groupId && groupId !== REAL_DISCUSSION_GROUP && groupId !== '-1002904085857' && !allTargets.includes(groupId)) {
     allTargets.push(groupId);
   }
-  if (extraChannelId && extraChannelId !== DISCUSSION_GROUP_ID && !allTargets.includes(extraChannelId)) {
+  
+  // Add channel ONLY if it's NOT the discussion group
+  if (extraChannelId && extraChannelId !== REAL_DISCUSSION_GROUP && extraChannelId !== '-1002904085857' && !allTargets.includes(extraChannelId)) {
     allTargets.push(extraChannelId);
   }
   
@@ -445,66 +448,66 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
     ]
   };
   
-  // DEBUG: Log all targets
-  console.log('All targets before filtering:', allTargets);
-  console.log('Discussion group ID:', DISCUSSION_GROUP_ID);
+  // STEP 1: Post MCQ to all groups/channels (NOT discussion group)
+  console.log('=== POSTING MCQs ===');
+  console.log('Targets for MCQ:', allTargets);
   
-  // Post MCQ to all targets EXCEPT discussion group
-  let postedCount = 0;
-  let postedToChannels = [];
+  let mcqPostedTo = [];
   
   for (const targetId of allTargets) {
-    // Double check - never post MCQ to discussion group
-    if (targetId === DISCUSSION_GROUP_ID || targetId === '-1002904085857') {
-      console.log(`SKIPPING DISCUSSION GROUP: ${targetId}`);
+    // NEVER post MCQ to discussion group
+    if (targetId === '-1002904085857' || targetId === REAL_DISCUSSION_GROUP) {
+      console.log(`Skipping discussion group for MCQ: ${targetId}`);
       continue;
     }
     
-    // Check if it's posting explanation to wrong place
-    const isChannel = targetId.startsWith('-100');
-    
     try {
-      // For now, let's check what we're posting where
-      console.log(`POSTING MCQ TO: ${targetId} (isChannel: ${isChannel})`);
-      
-      // Only post MCQ, never explanation
+      console.log(`Posting MCQ to: ${targetId}`);
       await sendMessage(token, targetId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
-      postedCount++;
-      postedToChannels.push(targetId);
-      
+      mcqPostedTo.push(targetId);
     } catch (error) {
-      console.error(`Failed to post to ${targetId}:`, error);
+      console.error(`Failed to post MCQ to ${targetId}:`, error);
     }
   }
   
-  console.log('Posted MCQ to these channels/groups:', postedToChannels);
+  console.log('MCQs posted to:', mcqPostedTo);
   
-  // Post ONLY explanation to discussion group (hardcoded ID)
-  // FORCE post to exact ID
-  const EXACT_DISCUSSION_ID = '-1002904085857';
-  const explanationOnly = `📚 Question ${currentIndex + 1}\n\n${question.explanation}`;
+  // STEP 2: Post explanation ONLY to discussion group - completely separate
+  console.log('=== POSTING EXPLANATION ===');
+  const explanationText = `📚 Question ${currentIndex + 1}\n\n${question.explanation}`;
   
-  console.log(`ATTEMPTING TO POST EXPLANATION TO: ${EXACT_DISCUSSION_ID}`);
+  // Try multiple times to ensure it posts to discussion group
+  let explanationPosted = false;
   
+  // Try 1: String format
   try {
-    const result = await sendMessage(token, EXACT_DISCUSSION_ID, explanationOnly);
-    console.log(`SUCCESS: Posted explanation to discussion group ${EXACT_DISCUSSION_ID}`, result);
+    console.log('Attempting to post explanation to: -1002904085857 (string)');
+    await sendMessage(token, '-1002904085857', explanationText);
+    console.log('SUCCESS: Explanation posted to discussion group');
+    explanationPosted = true;
   } catch (error) {
-    console.error(`FAILED to post explanation to discussion group ${EXACT_DISCUSSION_ID}:`, error);
-    // Try with number format
+    console.error('Failed with string ID:', error);
+  }
+  
+  // Try 2: Number format if string failed
+  if (!explanationPosted) {
     try {
-      const numericId = -1002904085857;
-      console.log(`RETRY with numeric ID: ${numericId}`);
-      const result2 = await sendMessage(token, numericId, explanationOnly);
-      console.log(`SUCCESS on retry:`, result2);
-    } catch (error2) {
-      console.error(`FAILED on retry too:`, error2);
+      console.log('Attempting to post explanation to: -1002904085857 (number)');
+      await sendMessage(token, -1002904085857, explanationText);
+      console.log('SUCCESS: Explanation posted to discussion group (number format)');
+      explanationPosted = true;
+    } catch (error) {
+      console.error('Failed with number ID too:', error);
     }
+  }
+  
+  if (!explanationPosted) {
+    console.error('CRITICAL: Could not post explanation to discussion group -1002904085857');
   }
   
   // Save cleaned targets list
   await putJSON(kv, 'bot:targets', allTargets);
-  console.log(`MCQ posted to ${postedCount} groups/channels, explanation posted to discussion group ${DISCUSSION_GROUP_ID}`);
+  console.log(`Summary: MCQs posted to ${mcqPostedTo.length} targets, Explanation posted: ${explanationPosted}`);
 }
 
 function validateQuestion(q: any): q is Question {
