@@ -5,6 +5,7 @@ interface Env {
   TELEGRAM_BOT_TOKEN: string;
   TARGET_GROUP_ID: string;
   TARGET_CHANNEL_ID?: string;
+  TARGET_DISCUSSION_GROUP_ID?: string;
   BOT_USERNAME?: string;
   ADMIN_CHAT_ID: string;
   ADMIN_USERNAME?: string;
@@ -391,7 +392,7 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
   await sendMessage(token, chatId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
 }
 
-async function postNextToAll(kv: KVNamespace, token: string, groupId: string, extraChannelId?: string): Promise<void> {
+async function postNextToAll(kv: KVNamespace, token: string, groupId: string, extraChannelId?: string, discussionGroupId?: string): Promise<void> {
   const questions = await getJSON<Question[]>(kv, 'questions', []);
   if (questions.length === 0) {
     console.log('No questions available');
@@ -426,12 +427,15 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
   // Get ALL groups/channels the bot knows about
   let allTargets = await getJSON<string[]>(kv, 'bot:targets', []);
   
-  // Add groupId and channelId if provided
+  // Add groupId, channelId, and discussionGroupId if provided
   if (groupId && !allTargets.includes(groupId)) {
     allTargets.push(groupId);
   }
   if (extraChannelId && !allTargets.includes(extraChannelId)) {
     allTargets.push(extraChannelId);
+  }
+  if (discussionGroupId && !allTargets.includes(discussionGroupId)) {
+    allTargets.push(discussionGroupId);
   }
   
   // Save targets
@@ -2187,7 +2191,7 @@ export default {
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, report);
           } else if (data === 'admin:postNow') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Posting next MCQ…');
-            await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
+            await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Posted next MCQ to all targets');
           } else if (data === 'admin:dbstatus') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
@@ -2862,7 +2866,7 @@ export default {
         await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
         const count = Number(new URL(request.url).searchParams.get('count') || '1');
         for (let i = 0; i < Math.max(1, Math.min(20, count)); i++) {
-          await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
+          await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
         }
         return new Response(`MCQ posted x${Math.max(1, Math.min(20, count))}`);
       } else if (url.pathname === '/start-posting' && request.method === 'GET') {
@@ -2998,7 +3002,7 @@ export default {
       await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
       // Send 1 question per schedule tick
       for (let i = 0; i < 1; i++) {
-        await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
+        await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
       }
     } catch (error) {
       console.error('Scheduled error:', error);
