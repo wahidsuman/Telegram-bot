@@ -402,7 +402,19 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
     return;
   }
   
-  const indexKey = `idx:${groupId}`;
+  // Get all bot targets (groups and channels)
+  const allTargets = await getJSON<string[]>(kv, 'bot:targets', []);
+  
+  // Add the main group and channel to targets if not already there
+  if (groupId && !allTargets.includes(groupId)) {
+    allTargets.push(groupId);
+  }
+  if (extraChannelId && !allTargets.includes(extraChannelId)) {
+    allTargets.push(extraChannelId);
+  }
+  
+  // Use a global index for all targets
+  const indexKey = `idx:global`;
   const currentIndex = await getJSON<number>(kv, indexKey, 0);
   
   const question = questions[currentIndex];
@@ -410,7 +422,7 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
   
   await putJSON(kv, indexKey, nextIndex);
   
-  // Post to main group and channel (without answers)
+  // MCQ text and keyboard for regular groups/channels
   const text = `<b>🧠 Hourly MCQ #${currentIndex + 1}</b>\n\n<b>${esc(question.question)}</b>\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}`;
   
   const keyboard = {
@@ -428,17 +440,34 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
     ]
   };
   
-  await sendMessage(token, groupId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
-  
-  if (extraChannelId) {
-    await sendMessage(token, extraChannelId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
+  // Post MCQ to all targets EXCEPT discussion group
+  let postedCount = 0;
+  for (const targetId of allTargets) {
+    if (targetId !== discussionGroupId) {
+      try {
+        await sendMessage(token, targetId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
+        postedCount++;
+        console.log(`Posted MCQ to: ${targetId}`);
+      } catch (error) {
+        console.error(`Failed to post to ${targetId}:`, error);
+      }
+    }
   }
   
   // Post ONLY explanation to discussion group (no question, no options)
   if (discussionGroupId) {
     const explanationOnly = `📚 Question ${currentIndex + 1}\n\n${question.explanation}`;
-    await sendMessage(token, discussionGroupId, explanationOnly);
+    try {
+      await sendMessage(token, discussionGroupId, explanationOnly);
+      console.log(`Posted explanation to discussion group: ${discussionGroupId}`);
+    } catch (error) {
+      console.error(`Failed to post explanation to discussion group:`, error);
+    }
   }
+  
+  // Save updated targets list
+  await putJSON(kv, 'bot:targets', allTargets);
+  console.log(`MCQ posted to ${postedCount} groups/channels, explanation to discussion group`);
 }
 
 function validateQuestion(q: any): q is Question {
@@ -1178,6 +1207,19 @@ export default {
           
           // Fast path for common commands
           
+          // Auto-add group/channel to targets when bot receives a message
+          if (message.chat.type === 'group' || message.chat.type === 'supergroup' || message.chat.type === 'channel') {
+            const allTargets = await getJSON<string[]>(env.STATE, 'bot:targets', []);
+            const chatIdStr = String(chatId);
+            
+            // Don't add discussion group to regular targets
+            if (chatIdStr !== env.TARGET_DISCUSSION_GROUP_ID && !allTargets.includes(chatIdStr)) {
+              allTargets.push(chatIdStr);
+              await putJSON(env.STATE, 'bot:targets', allTargets);
+              console.log(`Added new target: ${chatIdStr} (${message.chat.title || 'Unknown'})`);
+            }
+          }
+          
           // Handle /groupid command to help identify discussion group
           if (message.text === '/groupid') {
             const groupInfo = `📍 Chat Information:\n\n` +
@@ -1187,6 +1229,21 @@ export default {
               `To set this as discussion group, add to GitHub Secrets:\n` +
               `TARGET_DISCUSSION_GROUP_ID = ${chatId}`;
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, groupInfo, { parse_mode: 'Markdown' });
+            return new Response('OK');
+          }
+          
+          // Admin command to list all targets
+          if (message.text === '/targets' && String(chatId) === env.ADMIN_CHAT_ID) {
+            const allTargets = await getJSON<string[]>(env.STATE, 'bot:targets', []);
+            const targetsList = allTargets.length > 0 
+              ? allTargets.map((t, i) => `${i + 1}. ${t}`).join('\n')
+              : 'No targets registered yet';
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+              `📋 **All MCQ Targets:**\n\n${targetsList}\n\n` +
+              `Discussion Group: ${env.TARGET_DISCUSSION_GROUP_ID || 'Not set'}\n\n` +
+              `Total: ${allTargets.length} groups/channels`, 
+              { parse_mode: 'Markdown' });
             return new Response('OK');
           }
           
