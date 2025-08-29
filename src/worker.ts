@@ -1248,6 +1248,40 @@ export default {
             return new Response('OK');
           }
           
+          // Test posting to discussion group
+          if (message.text === '/testdiscussion' && isAdmin) {
+            if (!env.TARGET_DISCUSSION_GROUP_ID) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ TARGET_DISCUSSION_GROUP_ID is not set in environment');
+              return new Response('OK');
+            }
+            
+            console.log(`Testing post to discussion group: ${env.TARGET_DISCUSSION_GROUP_ID}`);
+            
+            try {
+              const testMsg = `🧪 Test message to discussion group\n\nTime: ${new Date().toISOString()}\nGroup ID: ${env.TARGET_DISCUSSION_GROUP_ID}`;
+              const result = await sendMessage(env.TELEGRAM_BOT_TOKEN, env.TARGET_DISCUSSION_GROUP_ID, testMsg);
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                `✅ SUCCESS! Message sent to discussion group!\n\n` +
+                `Group ID: ${env.TARGET_DISCUSSION_GROUP_ID}\n` +
+                `Result: ${JSON.stringify(result)}`);
+            } catch (error: any) {
+              console.error('Failed to post to discussion group:', error);
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                `❌ FAILED to send to discussion group!\n\n` +
+                `Group ID: ${env.TARGET_DISCUSSION_GROUP_ID}\n` +
+                `Error: ${error.message || JSON.stringify(error)}\n\n` +
+                `Possible issues:\n` +
+                `1. Bot not added to the group\n` +
+                `2. Bot doesn't have permission to post\n` +
+                `3. Wrong group ID\n` +
+                `4. Group is private and bot needs to be admin`);
+            }
+            
+            return new Response('OK');
+          }
+          
           // Test explanation posting
           if (message.text === '/testexplain' && isAdmin) {
             if (!env.TARGET_DISCUSSION_GROUP_ID) {
@@ -1292,8 +1326,7 @@ export default {
               `• Current question index: ${currentIndex}\n` +
               `• Active targets: ${allTargets.length}\n` +
               `• Target IDs: ${allTargets.join(', ') || 'None'}\n\n` +
-              `**Note:** MCQs go to all targets EXCEPT discussion group\n` +
-              `**Note:** Explanations go ONLY to TARGET_DISCUSSION_GROUP_ID`);
+              `**Note:** MCQs should go to all targets including TARGET_DISCUSSION_GROUP_ID`);
             return new Response('OK');
           }
           
