@@ -393,7 +393,9 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
 }
 
 async function postNextToAll(kv: KVNamespace, token: string, groupId: string, extraChannelId?: string, discussionGroupId?: string): Promise<void> {
-  console.log('postNextToAll called with:', { groupId, extraChannelId, discussionGroupId });
+  const DISCUSSION_GROUP_ID = '-1002904085857'; // Hardcoded discussion group
+  
+  console.log('postNextToAll called');
   
   const questions = await getJSON<Question[]>(kv, 'questions', []);
   
@@ -403,13 +405,16 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
   }
   
   // Get all bot targets (groups and channels)
-  const allTargets = await getJSON<string[]>(kv, 'bot:targets', []);
+  let allTargets = await getJSON<string[]>(kv, 'bot:targets', []);
+  
+  // Clean targets - remove discussion group if present
+  allTargets = allTargets.filter(t => t !== DISCUSSION_GROUP_ID);
   
   // Add the main group and channel to targets if not already there
-  if (groupId && !allTargets.includes(groupId)) {
+  if (groupId && groupId !== DISCUSSION_GROUP_ID && !allTargets.includes(groupId)) {
     allTargets.push(groupId);
   }
-  if (extraChannelId && !allTargets.includes(extraChannelId)) {
+  if (extraChannelId && extraChannelId !== DISCUSSION_GROUP_ID && !allTargets.includes(extraChannelId)) {
     allTargets.push(extraChannelId);
   }
   
@@ -442,16 +447,13 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
   
   // Post MCQ to all targets EXCEPT discussion group
   let postedCount = 0;
-  const discussionGroupIdStr = discussionGroupId ? String(discussionGroupId) : null;
-  
   for (const targetId of allTargets) {
-    // Skip if this is the discussion group
-    if (discussionGroupIdStr && String(targetId) === discussionGroupIdStr) {
-      console.log(`Skipping discussion group: ${targetId}`);
+    // Double check - never post MCQ to discussion group
+    if (targetId === DISCUSSION_GROUP_ID) {
+      console.log(`Skipping discussion group in loop: ${targetId}`);
       continue;
     }
     
-    // Post MCQ to this target
     try {
       await sendMessage(token, targetId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
       postedCount++;
@@ -461,23 +463,18 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
     }
   }
   
-  // Post ONLY explanation to discussion group (-1002904085857)
-  // STRICT CHECK: Only post if discussionGroupId is exactly the configured value
-  if (discussionGroupIdStr && discussionGroupIdStr === '-1002904085857') {
-    const explanationOnly = `📚 Question ${currentIndex + 1}\n\n${question.explanation}`;
-    try {
-      await sendMessage(token, discussionGroupIdStr, explanationOnly);
-      console.log(`Posted explanation to discussion group: ${discussionGroupIdStr}`);
-    } catch (error) {
-      console.error(`Failed to post explanation to discussion group:`, error);
-    }
-  } else {
-    console.log(`Discussion group not configured or not matching expected ID. Got: ${discussionGroupIdStr}`);
+  // Post ONLY explanation to discussion group (hardcoded ID)
+  const explanationOnly = `📚 Question ${currentIndex + 1}\n\n${question.explanation}`;
+  try {
+    await sendMessage(token, DISCUSSION_GROUP_ID, explanationOnly);
+    console.log(`Posted explanation to discussion group: ${DISCUSSION_GROUP_ID}`);
+  } catch (error) {
+    console.error(`Failed to post explanation to discussion group:`, error);
   }
   
-  // Save updated targets list
+  // Save cleaned targets list
   await putJSON(kv, 'bot:targets', allTargets);
-  console.log(`MCQ posted to ${postedCount} groups/channels, explanation to discussion group`);
+  console.log(`MCQ posted to ${postedCount} groups/channels, explanation posted to discussion group ${DISCUSSION_GROUP_ID}`);
 }
 
 function validateQuestion(q: any): q is Question {
