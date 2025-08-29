@@ -5,7 +5,6 @@ interface Env {
   TELEGRAM_BOT_TOKEN: string;
   TARGET_GROUP_ID: string;
   TARGET_CHANNEL_ID?: string;
-  TARGET_DISCUSSION_GROUP_ID?: string;
   BOT_USERNAME?: string;
   ADMIN_CHAT_ID: string;
   ADMIN_USERNAME?: string;
@@ -392,7 +391,7 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
   await sendMessage(token, chatId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
 }
 
-async function postNextToAll(kv: KVNamespace, token: string, groupId: string, extraChannelId?: string, discussionGroupId?: string): Promise<void> {
+async function postNextToAll(kv: KVNamespace, token: string, groupId: string, extraChannelId?: string): Promise<void> {
   const questions = await getJSON<Question[]>(kv, 'questions', []);
   if (questions.length === 0) {
     console.log('No questions available');
@@ -427,61 +426,27 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
   // Get ALL groups/channels the bot knows about
   let allTargets = await getJSON<string[]>(kv, 'bot:targets', []);
   
-  // Add groupId and channelId if provided (but NOT discussion group)
-  if (groupId && !allTargets.includes(groupId) && groupId !== discussionGroupId) {
+  // Add groupId and channelId if provided
+  if (groupId && !allTargets.includes(groupId)) {
     allTargets.push(groupId);
   }
-  if (extraChannelId && !allTargets.includes(extraChannelId) && extraChannelId !== discussionGroupId) {
+  if (extraChannelId && !allTargets.includes(extraChannelId)) {
     allTargets.push(extraChannelId);
-  }
-  
-  // Remove discussion group from targets if it somehow got added
-  if (discussionGroupId) {
-    allTargets = allTargets.filter(id => id !== discussionGroupId);
   }
   
   // Save targets
   await putJSON(kv, 'bot:targets', allTargets);
   
-  // Debug logging
-  console.log(`Discussion Group ID: ${discussionGroupId}`);
-  console.log(`All targets: ${allTargets.join(', ')}`);
-  
-  // POST MCQs TO ALL TARGETS (except discussion group if specified)
-  console.log(`Posting MCQ #${currentIndex + 1} to targets (excluding discussion group)`);
+  // POST MCQs TO ALL TARGETS
+  console.log(`Posting MCQ #${currentIndex + 1} to ${allTargets.length} groups/channels`);
   
   for (const targetId of allTargets) {
-    // Skip discussion group for MCQs
-    if (discussionGroupId && targetId === discussionGroupId) {
-      console.log(`⏭️ Skipping MCQ for discussion group: ${targetId}`);
-      continue;
-    }
-    
     try {
       await sendMessage(token, targetId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
       console.log(`✅ MCQ posted to: ${targetId}`);
     } catch (error) {
       console.error(`❌ Failed to post MCQ to ${targetId}:`, error);
     }
-  }
-  
-  // POST EXPLANATION TO DISCUSSION GROUP ONLY (if specified)
-  if (discussionGroupId) {
-    console.log(`Checking explanation for discussion group ${discussionGroupId}...`);
-    if (question.explanation && question.explanation.trim() !== '') {
-      const explanationText = `📚 <b>Question ${currentIndex + 1} - Explanation</b>\n\n${question.explanation}`;
-      
-      try {
-        await sendMessage(token, discussionGroupId, explanationText, { parse_mode: 'HTML' });
-        console.log(`✅ Explanation posted to discussion group: ${discussionGroupId}`);
-      } catch (error) {
-        console.error(`❌ Failed to post explanation to discussion group ${discussionGroupId}:`, error);
-      }
-    } else {
-      console.log(`⚠️ No explanation available for question ${currentIndex + 1}`);
-    }
-  } else {
-    console.log('⚠️ No discussion group ID provided');
   }
   
   console.log(`✅ Posting complete: MCQs to ${allTargets.length} targets`);
@@ -2222,7 +2187,7 @@ export default {
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, report);
           } else if (data === 'admin:postNow') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Posting next MCQ…');
-            await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
+            await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Posted next MCQ to all targets');
           } else if (data === 'admin:dbstatus') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
@@ -2897,7 +2862,7 @@ export default {
         await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
         const count = Number(new URL(request.url).searchParams.get('count') || '1');
         for (let i = 0; i < Math.max(1, Math.min(20, count)); i++) {
-          await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
+          await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
         }
         return new Response(`MCQ posted x${Math.max(1, Math.min(20, count))}`);
       } else if (url.pathname === '/start-posting' && request.method === 'GET') {
@@ -3033,7 +2998,7 @@ export default {
       await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
       // Send 1 question per schedule tick
       for (let i = 0; i < 1; i++) {
-        await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
+        await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
       }
     } catch (error) {
       console.error('Scheduled error:', error);
