@@ -2104,13 +2104,13 @@ export default {
           } else if (data === 'admin:dbstatus') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
-            const indexKey = `idx:${env.TARGET_GROUP_ID}`;
+            const indexKey = `idx:global`;
             const currentIndex = await getJSON<number>(env.STATE, indexKey, 0);
+            const allTargets = await getJSON<string[]>(env.STATE, 'bot:targets', []);
             const sent = currentIndex;
             const total = questions.length;
             const unsent = Math.max(0, total - sent);
-            const extraIdx = env.TARGET_CHANNEL_ID ? await getJSON<number>(env.STATE, `idx:${env.TARGET_CHANNEL_ID}`, 0) : undefined;
-            const msg = `🗄️ DB Status\n\n• Total questions: ${total}\n• Sent (Group): ${sent}\n${env.TARGET_CHANNEL_ID ? `• Sent (Channel): ${extraIdx}\n` : ''}• Unsent: ${unsent}`;
+            const msg = `🗄️ DB Status\n\n• Total questions: ${total}\n• Current index: ${sent}\n• Unsent: ${unsent}\n• Active targets: ${allTargets.length} groups/channels`;
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, msg);
           } else if (data === 'admin:broadcast') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
