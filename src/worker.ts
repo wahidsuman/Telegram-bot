@@ -1248,14 +1248,19 @@ export default {
               return new Response('OK');
             }
             
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '🧪 Testing post to discussion group -1002904085857...');
+            if (!env.TARGET_DISCUSSION_GROUP_ID) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ TARGET_DISCUSSION_GROUP_ID is not set in environment variables');
+              return new Response('OK');
+            }
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `🧪 Testing post to discussion group ${env.TARGET_DISCUSSION_GROUP_ID}...`);
             
             try {
-              const testMessage = `🧪 TEST MESSAGE at ${new Date().toISOString()}\n\nThis is a test to discussion group -1002904085857`;
-              const result = await sendMessage(env.TELEGRAM_BOT_TOKEN, '-1002904085857', testMessage);
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Success! Message sent to discussion group.\n\nResult: ${JSON.stringify(result)}`);
+              const testMessage = `🧪 TEST MESSAGE at ${new Date().toISOString()}\n\nThis is a test to discussion group ${env.TARGET_DISCUSSION_GROUP_ID}`;
+              const result = await sendMessage(env.TELEGRAM_BOT_TOKEN, env.TARGET_DISCUSSION_GROUP_ID, testMessage);
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Success! Message sent to discussion group ${env.TARGET_DISCUSSION_GROUP_ID}.\n\nResult: ${JSON.stringify(result)}`);
             } catch (error) {
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Failed to send to discussion group!\n\nError: ${JSON.stringify(error)}\n\nMake sure the bot is added to group -1002904085857`);
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Failed to send to discussion group!\n\nError: ${JSON.stringify(error)}\n\nMake sure the bot is added to group ${env.TARGET_DISCUSSION_GROUP_ID}`);
             }
             
             return new Response('OK');
@@ -1264,6 +1269,33 @@ export default {
           // Simple test command
           if (message.text === '/test') {
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Bot is working!\n\nYour chat ID: ${chatId}\nYour username: ${message.from?.username || 'none'}\nChat type: ${message.chat.type}`);
+            return new Response('OK');
+          }
+          
+          // Test explanation posting
+          if (message.text === '/testexplain' && isAdmin) {
+            if (!env.TARGET_DISCUSSION_GROUP_ID) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ TARGET_DISCUSSION_GROUP_ID is not set');
+              return new Response('OK');
+            }
+            
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const currentIndex = await getJSON<number>(env.STATE, `idx:global`, 0);
+            const question = questions[currentIndex];
+            
+            if (!question || !question.explanation) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ No explanation available for current question');
+              return new Response('OK');
+            }
+            
+            const explanationText = `📚 <b>Question ${currentIndex + 1} - Explanation</b>\n\n${question.explanation}`;
+            
+            try {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, env.TARGET_DISCUSSION_GROUP_ID, explanationText, { parse_mode: 'HTML' });
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Explanation sent to discussion group: ${env.TARGET_DISCUSSION_GROUP_ID}`);
+            } catch (error) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Failed to send explanation: ${JSON.stringify(error)}`);
+            }
             return new Response('OK');
           }
           
