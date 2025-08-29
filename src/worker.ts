@@ -5,7 +5,6 @@ interface Env {
   TELEGRAM_BOT_TOKEN: string;
   TARGET_GROUP_ID: string;
   TARGET_CHANNEL_ID?: string;
-  TARGET_DISCUSSION_GROUP_ID?: string;
   BOT_USERNAME?: string;
   ADMIN_CHAT_ID: string;
   ADMIN_USERNAME?: string;
@@ -392,16 +391,7 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
   await sendMessage(token, chatId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
 }
 
-async function postNextToAll(kv: KVNamespace, token: string, groupId: string, extraChannelId?: string, discussionGroupId?: string): Promise<void> {
-  const DISCUSSION_GROUP_ID = '-1002904085857'; // HARDCODED - explanations ONLY go here
-  
-  console.log('🚀 postNextToAll called with:', {
-    groupId,
-    extraChannelId,
-    discussionGroupId,
-    hardcodedDiscussion: DISCUSSION_GROUP_ID
-  });
-  
+async function postNextToAll(kv: KVNamespace, token: string, groupId: string, extraChannelId?: string): Promise<void> {
   const questions = await getJSON<Question[]>(kv, 'questions', []);
   if (questions.length === 0) {
     console.log('No questions available');
@@ -427,7 +417,6 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
         { text: 'D', callback_data: `ans:${currentIndex}:D` }
       ],
       [
-        { text: '💬 Join Discussion', url: 'https://t.me/+u0P8X-ZWHU1jMDQ1' },
         { text: '📊 Your Stats', callback_data: 'user:stats' }
       ]
     ]
@@ -444,21 +433,13 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
     allTargets.push(extraChannelId);
   }
   
-  // REMOVE discussion group from targets - it should NEVER get MCQs
-  allTargets = allTargets.filter(id => id !== DISCUSSION_GROUP_ID && id !== '-1002904085857');
-  
-  // Save cleaned targets
+  // Save targets
   await putJSON(kv, 'bot:targets', allTargets);
   
-  // POST MCQs TO ALL TARGETS (except discussion group)
+  // POST MCQs TO ALL TARGETS
   console.log(`Posting MCQ #${currentIndex + 1} to ${allTargets.length} groups/channels`);
   
   for (const targetId of allTargets) {
-    // FINAL CHECK - never post MCQ to discussion group
-    if (targetId === DISCUSSION_GROUP_ID || targetId === '-1002904085857') {
-      continue;
-    }
-    
     try {
       await sendMessage(token, targetId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
       console.log(`✅ MCQ posted to: ${targetId}`);
@@ -467,37 +448,7 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
     }
   }
   
-  // POST EXPLANATION ONLY TO DISCUSSION GROUP
-  console.log(`📚 Checking explanation for question ${currentIndex + 1}...`);
-  if (question.explanation && question.explanation.trim() !== '') {
-    console.log(`Found explanation (length: ${question.explanation.length}), posting to ${DISCUSSION_GROUP_ID}...`);
-    let explanationContent = question.explanation;
-    
-    // Truncate if too long (Telegram limit is 4096 chars)
-    if (explanationContent.length > 4000) {
-      explanationContent = explanationContent.substring(0, 3997) + '...';
-    }
-    
-    const explanationText = `📚 Question ${currentIndex + 1}\n\n${explanationContent}`;
-    
-    try {
-      const result = await sendMessage(token, DISCUSSION_GROUP_ID, explanationText);
-      console.log(`✅ Explanation posted to discussion group: ${DISCUSSION_GROUP_ID}`, result ? 'Success' : 'Unknown result');
-    } catch (error) {
-      // Try shorter version if failed
-      try {
-        const shortText = `📚 Question ${currentIndex + 1}\n\n${explanationContent.substring(0, 500)}...`;
-        await sendMessage(token, DISCUSSION_GROUP_ID, shortText);
-        console.log('✅ Posted shortened explanation to discussion group');
-      } catch (error2) {
-        console.error('❌ Could not post explanation to discussion group:', error2);
-      }
-    }
-  } else {
-    console.log('No explanation available for question', currentIndex + 1);
-  }
-  
-  console.log(`✅ Posting complete: MCQs to ${allTargets.length} targets, Explanation to discussion group`);
+  console.log(`✅ Posting complete: MCQs to ${allTargets.length} targets`);
 }
 
 function validateQuestion(q: any): q is Question {
@@ -1242,13 +1193,11 @@ export default {
             const allTargets = await getJSON<string[]>(env.STATE, 'bot:targets', []);
             const chatIdStr = String(chatId);
             
-            // STRICT CHECK: Don't add discussion group to regular targets
-            if (chatIdStr !== '-1002904085857' && chatIdStr !== env.TARGET_DISCUSSION_GROUP_ID && !allTargets.includes(chatIdStr)) {
+            // Add new group/channel to targets
+            if (!allTargets.includes(chatIdStr)) {
               allTargets.push(chatIdStr);
               await putJSON(env.STATE, 'bot:targets', allTargets);
               console.log(`Added new target: ${chatIdStr} (${message.chat.title || 'Unknown'})`);
-            } else if (chatIdStr === '-1002904085857') {
-              console.log(`Skipped adding discussion group to targets: ${chatIdStr}`);
             }
           }
           
@@ -1947,29 +1896,22 @@ export default {
                 
                 const isCorrect = answer === question.answer;
                 
-                // Build popup message with invitation to discussion group
+                // Build popup message with explanation
                 let popupMessage = isCorrect 
                   ? `✅ Correct!\n\nAnswer: ${question.answer}`
                   : `❌ Wrong!\n\nAnswer: ${question.answer}`;
                 
-                // Add invitation message (in italics using _ _)
-                const inviteMessage = `\n\n_For full explanation join discussion group below_`;
-                
-                // Calculate space for shortened explanation
-                // Reserve space for base message + invitation (about 100 chars total)
-                const baseLength = popupMessage.length + inviteMessage.length;
-                const remainingChars = 190 - baseLength;
-                
-                if (question.explanation && remainingChars > 20) {
-                  let truncatedExplanation = question.explanation;
-                  if (truncatedExplanation.length > remainingChars) {
-                    truncatedExplanation = truncatedExplanation.substring(0, remainingChars - 3) + '...';
+                // Add truncated explanation if available
+                if (question.explanation) {
+                  const remainingChars = 190 - popupMessage.length;
+                  if (remainingChars > 20) {
+                    let truncatedExplanation = question.explanation;
+                    if (truncatedExplanation.length > remainingChars) {
+                      truncatedExplanation = truncatedExplanation.substring(0, remainingChars - 3) + '...';
+                    }
+                    popupMessage += `\n\n${truncatedExplanation}`;
                   }
-                  popupMessage += `\n\n${truncatedExplanation}`;
                 }
-                
-                // Always add the invitation at the end
-                popupMessage += inviteMessage;
                 
                 console.log('Sending popup:', { 
                   isCorrect, 
@@ -2212,7 +2154,7 @@ export default {
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, report);
           } else if (data === 'admin:postNow') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Posting next MCQ…');
-            await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
+            await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '✅ Posted next MCQ to all targets');
           } else if (data === 'admin:dbstatus') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
@@ -2887,7 +2829,7 @@ export default {
         await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
         const count = Number(new URL(request.url).searchParams.get('count') || '1');
         for (let i = 0; i < Math.max(1, Math.min(20, count)); i++) {
-          await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
+          await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
         }
         return new Response(`MCQ posted x${Math.max(1, Math.min(20, count))}`);
       } else if (url.pathname === '/start-posting' && request.method === 'GET') {
@@ -3023,7 +2965,7 @@ export default {
       await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
       // Send 1 question per schedule tick
       for (let i = 0; i < 1; i++) {
-        await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
+        await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID);
       }
     } catch (error) {
       console.error('Scheduled error:', error);
