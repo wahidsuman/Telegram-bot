@@ -395,6 +395,13 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
 async function postNextToAll(kv: KVNamespace, token: string, groupId: string, extraChannelId?: string, discussionGroupId?: string): Promise<void> {
   const DISCUSSION_GROUP_ID = '-1002904085857'; // HARDCODED - explanations ONLY go here
   
+  console.log('🚀 postNextToAll called with:', {
+    groupId,
+    extraChannelId,
+    discussionGroupId,
+    hardcodedDiscussion: DISCUSSION_GROUP_ID
+  });
+  
   const questions = await getJSON<Question[]>(kv, 'questions', []);
   if (questions.length === 0) {
     console.log('No questions available');
@@ -461,7 +468,9 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
   }
   
   // POST EXPLANATION ONLY TO DISCUSSION GROUP
+  console.log(`📚 Checking explanation for question ${currentIndex + 1}...`);
   if (question.explanation && question.explanation.trim() !== '') {
+    console.log(`Found explanation (length: ${question.explanation.length}), posting to ${DISCUSSION_GROUP_ID}...`);
     let explanationContent = question.explanation;
     
     // Truncate if too long (Telegram limit is 4096 chars)
@@ -472,8 +481,8 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
     const explanationText = `📚 Question ${currentIndex + 1}\n\n${explanationContent}`;
     
     try {
-      await sendMessage(token, DISCUSSION_GROUP_ID, explanationText);
-      console.log(`✅ Explanation posted to discussion group: ${DISCUSSION_GROUP_ID}`);
+      const result = await sendMessage(token, DISCUSSION_GROUP_ID, explanationText);
+      console.log(`✅ Explanation posted to discussion group: ${DISCUSSION_GROUP_ID}`, result ? 'Success' : 'Unknown result');
     } catch (error) {
       // Try shorter version if failed
       try {
@@ -1270,6 +1279,28 @@ export default {
           // Simple test command
           if (message.text === '/test') {
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Bot is working!\n\nYour chat ID: ${chatId}\nYour username: ${message.from?.username || 'none'}\nChat type: ${message.chat.type}`);
+            return new Response('OK');
+          }
+          
+          // Debug command for admin
+          if (message.text === '/debug' && isAdmin) {
+            const allTargets = await getJSON<string[]>(env.STATE, 'bot:targets', []);
+            const indexKey = `idx:global`;
+            const currentIndex = await getJSON<number>(env.STATE, indexKey, 0);
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+              `🔧 **Debug Info**\n\n` +
+              `**Environment Variables:**\n` +
+              `• TARGET_GROUP_ID: ${env.TARGET_GROUP_ID || 'NOT SET'}\n` +
+              `• TARGET_CHANNEL_ID: ${env.TARGET_CHANNEL_ID || 'NOT SET'}\n` +
+              `• TARGET_DISCUSSION_GROUP_ID: ${env.TARGET_DISCUSSION_GROUP_ID || 'NOT SET'}\n` +
+              `• ADMIN_CHAT_ID: ${env.ADMIN_CHAT_ID || 'NOT SET'}\n\n` +
+              `**Hardcoded Discussion Group:** -1002904085857\n\n` +
+              `**Current State:**\n` +
+              `• Current question index: ${currentIndex}\n` +
+              `• Active targets: ${allTargets.length}\n` +
+              `• Target IDs: ${allTargets.join(', ') || 'None'}\n\n` +
+              `**Important:** The bot will ONLY post explanations to -1002904085857 regardless of env vars.`);
             return new Response('OK');
           }
           
