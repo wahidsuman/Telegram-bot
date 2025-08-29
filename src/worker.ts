@@ -1330,6 +1330,40 @@ export default {
             return new Response('OK');
           }
           
+          // Quick reset to 40 command
+          if (message.text === '/reset40' && isAdmin) {
+            await putJSON(env.STATE, 'idx:global', 40);
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+              `✅ Question index reset to 40\n\n` +
+              `Next question will be #41\n` +
+              `Next: ${questions[40]?.question?.substring(0, 100) || 'N/A'}...`);
+            return new Response('OK');
+          }
+          
+          // Reset question index command
+          if (message.text?.startsWith('/resetindex ') && isAdmin) {
+            const newIndex = parseInt(message.text.split(' ')[1]);
+            
+            if (isNaN(newIndex) || newIndex < 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ Invalid index. Use: /resetindex [number]');
+              return new Response('OK');
+            }
+            
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            if (newIndex >= questions.length) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Index too high. Maximum is ${questions.length - 1}`);
+              return new Response('OK');
+            }
+            
+            await putJSON(env.STATE, 'idx:global', newIndex);
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+              `✅ Question index reset to ${newIndex}\n\n` +
+              `Next question will be #${newIndex + 1}\n` +
+              `Current question: ${questions[newIndex].question.substring(0, 100)}...`);
+            return new Response('OK');
+          }
+          
           // Check specific question
           if (message.text?.startsWith('/checkq ') && String(chatId) === env.ADMIN_CHAT_ID) {
             const qNum = parseInt(message.text.split(' ')[1]) - 1;
