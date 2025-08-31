@@ -1196,7 +1196,7 @@ async function ensureShardedInitialized(kv: KVNamespace): Promise<void> {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     
     try {
@@ -1481,8 +1481,8 @@ export default {
                return new Response('OK');
             } else {
                         // Track unique user interaction
-          const today = new Date().toISOString().split('T')[0];
-          const yyyyMM = today.substring(0, 7);
+          const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
+          const yyyyMM = getCurrentMonth(env.TZ || 'Asia/Kolkata');
           const userId = message.from?.id?.toString();
           
           if (userId) {
@@ -2064,9 +2064,11 @@ export default {
                 const result = await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popupMessage, true);
                 console.log('Popup sent, result:', result);
                 
-                // Update stats in background (don't await)
-                incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata')
-                  .catch(err => console.error('Stats update error:', err));
+                // Update stats using background task to avoid cancellation
+                ctx.waitUntil(
+                  incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata')
+                    .catch(err => console.error('Stats update error:', err))
+                );
                   
               } else {
                 console.error('Question not found:', { qid, totalQuestions: questions.length });
