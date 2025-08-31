@@ -998,18 +998,54 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
 }
 
 async function formatDailyReport(kv: KVNamespace, date: string): Promise<string> {
-  const stats = await getJSON<DayStats>(kv, `stats:daily:${date}`, { total: 0, users: {} });
+  const [stats, dailyUsers] = await Promise.all([
+    getJSON<DayStats>(kv, `stats:daily:${date}`, { total: 0, users: {} }),
+    getJSON<string[]>(kv, `stats:daily:users:${date}`, [])
+  ]);
   
-  const uniqueUsers = Object.keys(stats.users).length;
-  const totalAnswers = stats.total;
-  const avgPerUser = uniqueUsers > 0 ? (totalAnswers / uniqueUsers).toFixed(1) : '0';
+  const uniqueUsersAnswers = Object.keys(stats.users).length;
+  const uniqueUsersInteracted = dailyUsers.length;
+  let totalAnswers = stats.total;
+  let avgPerUser = uniqueUsersAnswers > 0 ? (totalAnswers / uniqueUsersAnswers).toFixed(1) : '0';
+  
+  // Fallback: reconstruct counts from seen keys if aggregates are empty but interactions exist
+  if (totalAnswers === 0 && uniqueUsersInteracted > 0) {
+    const reconstructed: DayStats = { total: 0, users: {} };
+    const perUserSeen = await Promise.all(
+      dailyUsers.map(uid => getJSON<Record<string, boolean>>(kv, `seen:daily:${date}:${uid}`, {}))
+    );
+    for (let i = 0; i < dailyUsers.length; i++) {
+      const uid = dailyUsers[i];
+      const seen = perUserSeen[i];
+      const cnt = Object.keys(seen).length;
+      if (cnt > 0) {
+        reconstructed.users[uid] = {
+          cnt,
+          // Preserve correct answers if any exist in stored stats; otherwise 0
+          correct: stats.users[uid]?.correct || 0
+        };
+        reconstructed.total += cnt;
+      }
+    }
+    if (reconstructed.total > 0) {
+      totalAnswers = reconstructed.total;
+      avgPerUser = Object.keys(reconstructed.users).length > 0 
+        ? (reconstructed.total / Object.keys(reconstructed.users).length).toFixed(1)
+        : '0';
+      // Merge reconstructed users into stats for display
+      for (const uid of Object.keys(reconstructed.users)) {
+        stats.users[uid] = reconstructed.users[uid];
+      }
+    }
+  }
   
   let report = `📊 Daily MCQ Report - ${date}\n\n`;
-  report += `👥 MCQ Users: ${uniqueUsers}\n`;
+  report += `👥 Users Interacted: ${uniqueUsersInteracted}\n`;
+  report += `👥 Users Answered: ${uniqueUsersAnswers}\n`;
   report += `📝 Total Answers: ${totalAnswers}\n`;
-  report += `📈 Average per User: ${avgPerUser}\n\n`;
+  report += `📈 Average per Answering User: ${avgPerUser}\n\n`;
   
-  if (uniqueUsers > 0) {
+  if (uniqueUsersAnswers > 0) {
     const topUsers = Object.entries(stats.users)
       .sort(([,a], [,b]) => b.cnt - a.cnt)
       .slice(0, 5);
@@ -1076,18 +1112,52 @@ async function showQuestionNumberPage(kv: KVNamespace, token: string, chatId: st
 }
 
 async function formatMonthlyReport(kv: KVNamespace, yyyyMM: string): Promise<string> {
-  const stats = await getJSON<DayStats>(kv, `stats:monthly:${yyyyMM}`, { total: 0, users: {} });
+  const [stats, monthlyUsers] = await Promise.all([
+    getJSON<DayStats>(kv, `stats:monthly:${yyyyMM}`, { total: 0, users: {} }),
+    getJSON<string[]>(kv, `stats:monthly:users:${yyyyMM}`, [])
+  ]);
   
-  const uniqueUsers = Object.keys(stats.users).length;
-  const totalAnswers = stats.total;
-  const avgPerUser = uniqueUsers > 0 ? (totalAnswers / uniqueUsers).toFixed(1) : '0';
+  const uniqueUsersAnswers = Object.keys(stats.users).length;
+  const uniqueUsersInteracted = monthlyUsers.length;
+  let totalAnswers = stats.total;
+  let avgPerUser = uniqueUsersAnswers > 0 ? (totalAnswers / uniqueUsersAnswers).toFixed(1) : '0';
+  
+  // Fallback: reconstruct counts from seen keys if aggregates are empty but interactions exist
+  if (totalAnswers === 0 && uniqueUsersInteracted > 0) {
+    const reconstructed: DayStats = { total: 0, users: {} };
+    const perUserSeen = await Promise.all(
+      monthlyUsers.map(uid => getJSON<Record<string, boolean>>(kv, `seen:monthly:${yyyyMM}:${uid}`, {}))
+    );
+    for (let i = 0; i < monthlyUsers.length; i++) {
+      const uid = monthlyUsers[i];
+      const seen = perUserSeen[i];
+      const cnt = Object.keys(seen).length;
+      if (cnt > 0) {
+        reconstructed.users[uid] = {
+          cnt,
+          correct: stats.users[uid]?.correct || 0
+        };
+        reconstructed.total += cnt;
+      }
+    }
+    if (reconstructed.total > 0) {
+      totalAnswers = reconstructed.total;
+      avgPerUser = Object.keys(reconstructed.users).length > 0 
+        ? (reconstructed.total / Object.keys(reconstructed.users).length).toFixed(1)
+        : '0';
+      for (const uid of Object.keys(reconstructed.users)) {
+        stats.users[uid] = reconstructed.users[uid];
+      }
+    }
+  }
   
   let report = `📊 Monthly MCQ Report - ${yyyyMM}\n\n`;
-  report += `👥 MCQ Users: ${uniqueUsers}\n`;
+  report += `👥 Users Interacted: ${uniqueUsersInteracted}\n`;
+  report += `👥 Users Answered: ${uniqueUsersAnswers}\n`;
   report += `📝 Total Answers: ${totalAnswers}\n`;
-  report += `📈 Average per User: ${avgPerUser}\n\n`;
+  report += `📈 Average per Answering User: ${avgPerUser}\n\n`;
   
-  if (uniqueUsers > 0) {
+  if (uniqueUsersAnswers > 0) {
     const topUsers = Object.entries(stats.users)
       .sort(([,a], [,b]) => b.cnt - a.cnt)
       .slice(0, 5);
@@ -1196,7 +1266,7 @@ async function ensureShardedInitialized(kv: KVNamespace): Promise<void> {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     
     try {
@@ -1481,8 +1551,8 @@ export default {
                return new Response('OK');
             } else {
                         // Track unique user interaction
-          const today = new Date().toISOString().split('T')[0];
-          const yyyyMM = today.substring(0, 7);
+          const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
+          const yyyyMM = getCurrentMonth(env.TZ || 'Asia/Kolkata');
           const userId = message.from?.id?.toString();
           
           if (userId) {
@@ -2064,9 +2134,31 @@ export default {
                 const result = await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popupMessage, true);
                 console.log('Popup sent, result:', result);
                 
-                // Update stats in background (don't await)
-                incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata')
-                  .catch(err => console.error('Stats update error:', err));
+                // Update stats using background task to avoid cancellation
+                ctx.waitUntil((async () => {
+                  try {
+                    const tz = env.TZ || 'Asia/Kolkata';
+                    await incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, tz);
+                    // Also track unique user interaction on answer
+                    const today = getCurrentDate(tz);
+                    const month = getCurrentMonth(tz);
+                    const uid = String(userId);
+                    const [dailyUsers, monthlyUsers] = await Promise.all([
+                      getJSON<string[]>(env.STATE, `stats:daily:users:${today}`, []),
+                      getJSON<string[]>(env.STATE, `stats:monthly:users:${month}`, [])
+                    ]);
+                    if (!dailyUsers.includes(uid)) {
+                      dailyUsers.push(uid);
+                      await putJSON(env.STATE, `stats:daily:users:${today}`, dailyUsers);
+                    }
+                    if (!monthlyUsers.includes(uid)) {
+                      monthlyUsers.push(uid);
+                      await putJSON(env.STATE, `stats:monthly:users:${month}`, monthlyUsers);
+                    }
+                  } catch (err) {
+                    console.error('Stats/interaction update error:', err);
+                  }
+                })());
                   
               } else {
                 console.error('Question not found:', { qid, totalQuestions: questions.length });
