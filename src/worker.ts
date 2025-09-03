@@ -1627,10 +1627,11 @@ export default {
                   [{ text: stopButtonText, callback_data: 'admin:stopPosts' }],
                   [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
                   [{ text: '🎯 Jump to Question', callback_data: 'admin:jumpToQuestion' }],
-                  [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
+                  [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }],
+                  [{ text: '🔧 Check User Stats', callback_data: 'admin:checkUserStats' }]
                 ]
               };
-                              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel - WITH POST NOW', { reply_markup: keyboard });
+                              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v1.0', { reply_markup: keyboard });
                return new Response('OK');
             } else {
                         // Track unique user interaction
@@ -1776,12 +1777,64 @@ export default {
               // Check for discount button creation/editing flow
               const addDiscountPending = await env.STATE.get('admin:addDiscount:pending');
               const editDiscountPending = await env.STATE.get('admin:editDiscount:pending');
+              const checkUserStatsPending = await env.STATE.get('admin:checkUserStats:pending');
               
               if (addDiscountPending && message.text) {
                 await handleDiscountButtonCreation(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId, message.text, addDiscountPending);
                 return new Response('OK');
               } else if (editDiscountPending && message.text) {
                 await handleDiscountButtonEditing(env.STATE, env.TELEGRAM_BOT_TOKEN, chatId, message.text, editDiscountPending);
+                return new Response('OK');
+              } else if (checkUserStatsPending === '1' && message.text) {
+                await env.STATE.delete('admin:checkUserStats:pending');
+                const checkUserId = message.text.trim();
+                
+                const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
+                const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
+                
+                // Get all stats for this user
+                const dailyStats = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
+                const monthlyStats = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
+                const dailySeenKey = `seen:daily:${today}:${checkUserId}`;
+                const monthlySeenKey = `seen:monthly:${month}:${checkUserId}`;
+                const dailySeen = await getJSON<Record<string, boolean>>(env.STATE, dailySeenKey, {});
+                const monthlySeen = await getJSON<Record<string, boolean>>(env.STATE, monthlySeenKey, {});
+                
+                // Get questions to check if the user has sharded data
+                const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+                const hasLegacyQuestions = questions.length > 0;
+                const shardCount = await getShardCount(env.STATE);
+                const totalCount = await getTotalCount(env.STATE);
+                
+                const userDailyStats = dailyStats.users[checkUserId] || { cnt: 0, correct: 0 };
+                const userMonthlyStats = monthlyStats.users[checkUserId] || { cnt: 0, correct: 0 };
+                
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                  `🔍 **User Stats Analysis - User ${checkUserId}**\n\n` +
+                  `**System Info:**\n` +
+                  `• Questions storage: ${hasLegacyQuestions ? 'Legacy' : 'Sharded'}\n` +
+                  `• Total questions: ${hasLegacyQuestions ? questions.length : totalCount}\n` +
+                  `• Shard count: ${shardCount}\n\n` +
+                  `**Date Info:**\n` +
+                  `• Today: ${today}\n` +
+                  `• Month: ${month}\n` +
+                  `• Timezone: ${env.TZ || 'Asia/Kolkata'}\n\n` +
+                  `**Daily Stats (${today}):**\n` +
+                  `• Attempts: ${userDailyStats.cnt}\n` +
+                  `• Correct: ${userDailyStats.correct}\n` +
+                  `• Accuracy: ${userDailyStats.cnt > 0 ? Math.round((userDailyStats.correct / userDailyStats.cnt) * 100) : 0}%\n` +
+                  `• Questions seen: ${Object.keys(dailySeen).length}\n\n` +
+                  `**Monthly Stats (${month}):**\n` +
+                  `• Attempts: ${userMonthlyStats.cnt}\n` +
+                  `• Correct: ${userMonthlyStats.correct}\n` +
+                  `• Accuracy: ${userMonthlyStats.cnt > 0 ? Math.round((userMonthlyStats.correct / userMonthlyStats.cnt) * 100) : 0}%\n` +
+                  `• Questions seen: ${Object.keys(monthlySeen).length}\n\n` +
+                  `💡 **Troubleshooting:**\n` +
+                  `${userDailyStats.cnt === 0 ? '⚠️ No daily stats found - user may not have answered questions today\n' : ''}` +
+                  `${Object.keys(dailySeen).length > userDailyStats.cnt ? '⚠️ Mismatch: More questions seen than counted\n' : ''}` +
+                  `${hasLegacyQuestions && shardCount > 0 ? '⚠️ Both legacy and sharded questions exist - may cause issues\n' : ''}`,
+                  { parse_mode: 'Markdown' });
+                
                 return new Response('OK');
               } else if (message.text && (message.text.trim() === '/start' || message.text.trim() === '/admin' || message.text.trim() === '/cancel')) {
               // Clear all pending states for cancel command
@@ -1791,6 +1844,7 @@ export default {
                 await env.STATE.delete('admin:reply:pending');
                 await env.STATE.delete('admin:addDiscount:pending');
                 await env.STATE.delete('admin:editDiscount:pending');
+                await env.STATE.delete('admin:checkUserStats:pending');
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ All pending operations cancelled. You can now upload questions normally.');
                 return new Response('OK');
               }
@@ -2996,6 +3050,15 @@ export default {
             await env.STATE.delete('admin:edit:idx');
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❎ Edit cancelled');
 
+          } else if (data === 'admin:checkUserStats') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            await env.STATE.put('admin:checkUserStats:pending', '1');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+              '👤 **Check User Stats**\n\n' +
+              'Please send the User ID of the user whose stats you want to check.\n\n' +
+              'Example: `123456789`\n\n' +
+              'You can find a user\'s ID from their messages or when they interact with the bot.',
+              { parse_mode: 'Markdown' });
           } else if (data === 'admin:manageDiscounts') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             const buttons = await getDiscountButtons(env.STATE);
