@@ -310,10 +310,14 @@ async function initializeBotIfNeeded(kv: KVNamespace, token: string, targetGroup
 }
 
 async function incrementStatsFirstAttemptOnly(kv: KVNamespace, userId: number, qid: number, isCorrect: boolean, tz: string): Promise<void> {
+  console.log('incrementStatsFirstAttemptOnly called:', { userId, qid, isCorrect, tz });
+  
   const userIdStr = userId.toString();
   const qidStr = String(qid);
   const today = getCurrentDate(tz);
   const month = getCurrentMonth(tz);
+  
+  console.log('Date calculations:', { today, month, timezone: tz });
 
   // Batch all KV reads for better performance
   const [seenDaily, seenMonthly, dailyStats, monthlyStats] = await Promise.all([
@@ -352,7 +356,21 @@ async function incrementStatsFirstAttemptOnly(kv: KVNamespace, userId: number, q
 
   // Execute all updates in parallel
   if (updates.length > 0) {
-    await Promise.all(updates);
+    console.log('Executing stats updates:', {
+      updateCount: updates.length,
+      dailyStats: !alreadyDaily ? { total: dailyStats.total, userStats: dailyStats.users[userIdStr] } : 'skipped',
+      monthlyStats: !alreadyMonthly ? { total: monthlyStats.total, userStats: monthlyStats.users[userIdStr] } : 'skipped'
+    });
+    
+    try {
+      await Promise.all(updates);
+      console.log('Stats updates completed successfully');
+    } catch (error) {
+      console.error('Failed to save stats updates:', error);
+      throw error; // Re-throw to ensure caller knows about the failure
+    }
+  } else {
+    console.log('No stats updates needed - user already attempted this question today/this month');
   }
 }
 
@@ -998,7 +1016,17 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
 }
 
 async function formatDailyReport(kv: KVNamespace, date: string): Promise<string> {
-  const stats = await getJSON<DayStats>(kv, `stats:daily:${date}`, { total: 0, users: {} });
+  console.log('formatDailyReport called for date:', date);
+  
+  const statsKey = `stats:daily:${date}`;
+  const stats = await getJSON<DayStats>(kv, statsKey, { total: 0, users: {} });
+  
+  console.log('Daily stats retrieved:', {
+    key: statsKey,
+    total: stats.total,
+    userCount: Object.keys(stats.users).length,
+    users: stats.users
+  });
   
   const uniqueUsers = Object.keys(stats.users).length;
   const totalAnswers = stats.total;
@@ -1076,7 +1104,17 @@ async function showQuestionNumberPage(kv: KVNamespace, token: string, chatId: st
 }
 
 async function formatMonthlyReport(kv: KVNamespace, yyyyMM: string): Promise<string> {
-  const stats = await getJSON<DayStats>(kv, `stats:monthly:${yyyyMM}`, { total: 0, users: {} });
+  console.log('formatMonthlyReport called for month:', yyyyMM);
+  
+  const statsKey = `stats:monthly:${yyyyMM}`;
+  const stats = await getJSON<DayStats>(kv, statsKey, { total: 0, users: {} });
+  
+  console.log('Monthly stats retrieved:', {
+    key: statsKey,
+    total: stats.total,
+    userCount: Object.keys(stats.users).length,
+    users: stats.users
+  });
   
   const uniqueUsers = Object.keys(stats.users).length;
   const totalAnswers = stats.total;
@@ -1356,6 +1394,72 @@ export default {
               `• Target IDs: ${allTargets.join(', ') || 'None'}\n\n` +
               `**Note:** MCQs go to all targets EXCEPT TARGET_DISCUSSION_GROUP_ID\n` +
               `**Note:** Explanations go ONLY to TARGET_DISCUSSION_GROUP_ID`);
+            return new Response('OK');
+          }
+          
+          // Debug stats command
+          if (message.text === '/debugstats' && isAdmin) {
+            const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
+            const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
+            
+            // Get all relevant stats
+            const dailyStats = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
+            const monthlyStats = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
+            
+            // List all KV keys related to stats
+            const kvList = await env.STATE.list({ prefix: 'stats:' });
+            const statsKeys = kvList.keys.map(k => k.name).slice(0, 20); // First 20 keys
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+              `📊 **Stats Debug Info**\n\n` +
+              `**Current Date/Time:**\n` +
+              `• Timezone: ${env.TZ || 'Asia/Kolkata'}\n` +
+              `• Today: ${today}\n` +
+              `• Month: ${month}\n\n` +
+              `**Daily Stats (${today}):**\n` +
+              `• Total answers: ${dailyStats.total}\n` +
+              `• Unique users: ${Object.keys(dailyStats.users).length}\n` +
+              `• First 3 users: ${Object.keys(dailyStats.users).slice(0, 3).join(', ') || 'None'}\n\n` +
+              `**Monthly Stats (${month}):**\n` +
+              `• Total answers: ${monthlyStats.total}\n` +
+              `• Unique users: ${Object.keys(monthlyStats.users).length}\n` +
+              `• First 3 users: ${Object.keys(monthlyStats.users).slice(0, 3).join(', ') || 'None'}\n\n` +
+              `**KV Stats Keys (first 20):**\n` +
+              `${statsKeys.join('\n') || 'No stats keys found'}`);
+            return new Response('OK');
+          }
+          
+          // Manual stats test command
+          if (message.text === '/teststats' && isAdmin) {
+            const testUserId = 123456789; // Test user ID
+            const testQid = 0; // Test question ID
+            
+            try {
+              console.log('Testing stats increment...');
+              await incrementStatsFirstAttemptOnly(env.STATE, testUserId, testQid, true, env.TZ || 'Asia/Kolkata');
+              
+              // Read back the stats
+              const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
+              const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
+              const dailyStats = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
+              const monthlyStats = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                `✅ Stats test completed!\n\n` +
+                `**Test Details:**\n` +
+                `• User ID: ${testUserId}\n` +
+                `• Question ID: ${testQid}\n` +
+                `• Correct: true\n\n` +
+                `**Daily Stats After Test:**\n` +
+                `• Total: ${dailyStats.total}\n` +
+                `• Test user stats: ${JSON.stringify(dailyStats.users[testUserId] || 'not found')}\n\n` +
+                `**Monthly Stats After Test:**\n` +
+                `• Total: ${monthlyStats.total}\n` +
+                `• Test user stats: ${JSON.stringify(monthlyStats.users[testUserId] || 'not found')}`);
+            } catch (error) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Stats test failed: ${error}`);
+            }
+            
             return new Response('OK');
           }
           
@@ -2064,9 +2168,21 @@ export default {
                 const result = await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popupMessage, true);
                 console.log('Popup sent, result:', result);
                 
-                // Update stats in background (don't await)
-                incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata')
-                  .catch(err => console.error('Stats update error:', err));
+                // Update stats - MUST await to ensure data is saved
+                try {
+                  await incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata');
+                  console.log('Stats updated successfully for user:', userId, 'question:', qid, 'correct:', isCorrect);
+                } catch (err) {
+                  console.error('CRITICAL: Stats update failed:', err);
+                  // Log the error details for debugging
+                  console.error('Failed stats update details:', {
+                    userId,
+                    qid,
+                    isCorrect,
+                    timezone: env.TZ || 'Asia/Kolkata',
+                    error: err
+                  });
+                }
                   
               } else {
                 console.error('Question not found:', { qid, totalQuestions: questions.length });
@@ -2080,14 +2196,21 @@ export default {
             return new Response('OK');
             
           } else if (data === 'user:stats') {
+              console.log('User stats requested by:', userId);
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
               if (chatId && chatId < 0) {
                 const uname = env.BOT_USERNAME ? `@${env.BOT_USERNAME}` : 'our bot';
                                  try {
                    const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
                    const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
+                   console.log('Getting stats for user:', userId, 'date:', today, 'month:', month);
+                   
                    const daily = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
                    const monthly = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
+                   
+                   console.log('Daily stats:', { total: daily.total, userCount: Object.keys(daily.users).length, hasUserStats: !!daily.users[String(userId)] });
+                   console.log('Monthly stats:', { total: monthly.total, userCount: Object.keys(monthly.users).length, hasUserStats: !!monthly.users[String(userId)] });
+                   
                    const meD = daily.users[String(userId)] || { cnt: 0, correct: 0 };
                    const meM = monthly.users[String(userId)] || { cnt: 0, correct: 0 };
                    const statsMsg = `📊 Your Stats\n\nToday (${today}): ${meD.cnt} attempted, ${meD.correct} correct\nThis Month (${month}): ${meM.cnt} attempted, ${meM.correct} correct`;
@@ -2109,8 +2232,17 @@ export default {
               } else {
                 const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
                 const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
+                console.log('Getting stats for user (direct):', userId, 'date:', today, 'month:', month);
+                
                 const daily = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
                 const monthly = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
+                
+                console.log('User stats retrieved:', {
+                  userId: String(userId),
+                  dailyStats: daily.users[String(userId)] || 'none',
+                  monthlyStats: monthly.users[String(userId)] || 'none'
+                });
+                
                 const meD = daily.users[String(userId)] || { cnt: 0, correct: 0 };
                 const meM = monthly.users[String(userId)] || { cnt: 0, correct: 0 };
                 const msg = `📊 Your Stats\n\nToday (${today}): ${meD.cnt} attempted, ${meD.correct} correct\nThis Month (${month}): ${meM.cnt} attempted, ${meM.correct} correct`;
@@ -2284,12 +2416,14 @@ export default {
           } else if (data === 'admin:daily') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
+            console.log('Admin requesting daily report for:', today);
             const report = await formatDailyReport(env.STATE, today);
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, report);
             
           } else if (data === 'admin:monthly') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
+            console.log('Admin requesting monthly report for:', month);
             const report = await formatMonthlyReport(env.STATE, month);
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, report);
           } else if (data === 'admin:postNow') {
