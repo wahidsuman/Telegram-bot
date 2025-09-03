@@ -1463,6 +1463,55 @@ export default {
             return new Response('OK');
           }
           
+          // Check specific user stats
+          if (message.text?.startsWith('/checkuser ') && isAdmin) {
+            const checkUserId = message.text.split(' ')[1];
+            if (!checkUserId) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Usage: /checkuser <userId>');
+              return new Response('OK');
+            }
+            
+            const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
+            const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
+            
+            // Get all stats for this user
+            const dailyStats = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
+            const monthlyStats = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
+            const dailySeenKey = `seen:daily:${today}:${checkUserId}`;
+            const monthlySeenKey = `seen:monthly:${month}:${checkUserId}`;
+            const dailySeen = await getJSON<Record<string, boolean>>(env.STATE, dailySeenKey, {});
+            const monthlySeen = await getJSON<Record<string, boolean>>(env.STATE, monthlySeenKey, {});
+            
+            // List all stats-related keys for this user
+            const kvList = await env.STATE.list({ prefix: `seen:` });
+            const userKeys = kvList.keys.filter(k => k.name.includes(checkUserId)).map(k => k.name);
+            
+            const userDailyStats = dailyStats.users[checkUserId] || { cnt: 0, correct: 0 };
+            const userMonthlyStats = monthlyStats.users[checkUserId] || { cnt: 0, correct: 0 };
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+              `🔍 **User Stats Debug - User ${checkUserId}**\n\n` +
+              `**Date Info:**\n` +
+              `• Today: ${today}\n` +
+              `• Month: ${month}\n` +
+              `• Timezone: ${env.TZ || 'Asia/Kolkata'}\n\n` +
+              `**Daily Stats:**\n` +
+              `• Attempts: ${userDailyStats.cnt}\n` +
+              `• Correct: ${userDailyStats.correct}\n` +
+              `• Questions seen today: ${Object.keys(dailySeen).length}\n` +
+              `• Daily seen key: ${dailySeenKey}\n\n` +
+              `**Monthly Stats:**\n` +
+              `• Attempts: ${userMonthlyStats.cnt}\n` +
+              `• Correct: ${userMonthlyStats.correct}\n` +
+              `• Questions seen this month: ${Object.keys(monthlySeen).length}\n` +
+              `• Monthly seen key: ${monthlySeenKey}\n\n` +
+              `**All KV keys for this user:**\n` +
+              `${userKeys.slice(0, 10).join('\n') || 'None found'}\n` +
+              `${userKeys.length > 10 ? `... and ${userKeys.length - 10} more` : ''}`);
+            
+            return new Response('OK');
+          }
+          
           // Quick reset to 40 command
           if (message.text === '/reset40' && isAdmin) {
             await putJSON(env.STATE, 'idx:global', 40);
