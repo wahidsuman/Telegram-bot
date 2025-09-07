@@ -390,7 +390,7 @@ async function postNext(kv: KVNamespace, token: string, chatId: string): Promise
   
   await putJSON(kv, indexKey, nextIndex);
   
-  const text = `<b>🧠 Hourly MCQ #${currentIndex + 1}</b>\n\n<b>${esc(question.question)}</b>\n\n⬅️ Text Here For Any Query\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}`;
+  const text = `<b>🧠 Hourly MCQ #${currentIndex + 1}</b>\n\n<b>${esc(question.question)}</b>\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}\n\n⬅️ Text Here For Any Query`;
   
   const keyboard = {
     inline_keyboard: [
@@ -433,7 +433,7 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
   await putJSON(kv, indexKey, nextIndex);
   
   // MCQ text and keyboard
-  const text = `<b>🧠 Hourly MCQ #${currentIndex + 1}</b>\n\n<b>${esc(question.question)}</b>\n\n⬅️ Text Here For Any Query\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}`;
+  const text = `<b>🧠 Hourly MCQ #${currentIndex + 1}</b>\n\n<b>${esc(question.question)}</b>\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}\n\n⬅️ Text Here For Any Query`;
   
   const keyboard = {
     inline_keyboard: [
@@ -2991,7 +2991,7 @@ export default {
               const question = list[idx];
               
               // Post to all targets immediately
-              const text = `<b>🧠 MCQ #${idx + 1}</b>\n\n<b>${esc(question.question)}</b>\n\n⬅️ Text Here For Any Query\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}`;
+              const text = `<b>🧠 MCQ #${idx + 1}</b>\n\n<b>${esc(question.question)}</b>\n\nA) ${esc(question.options.A)}\nB) ${esc(question.options.B)}\nC) ${esc(question.options.C)}\nD) ${esc(question.options.D)}\n\n⬅️ Text Here For Any Query`;
               
               const keyboard = {
                 inline_keyboard: [
