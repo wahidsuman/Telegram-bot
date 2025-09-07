@@ -3028,7 +3028,18 @@ export default {
                 }
               }
               
-              // DO NOT post to discussion group - it only gets explanations
+              // POST EXPLANATION TO DISCUSSION GROUP
+              if (env.TARGET_DISCUSSION_GROUP_ID && question.explanation && question.explanation.trim() !== '') {
+                console.log(`Posting explanation to discussion group: ${env.TARGET_DISCUSSION_GROUP_ID}`);
+                const explanationText = `📚 <b>Question ${idx + 1} - Explanation</b>\n\n${question.explanation}`;
+                
+                try {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, env.TARGET_DISCUSSION_GROUP_ID, explanationText, { parse_mode: 'HTML' });
+                  console.log(`✅ Explanation posted to discussion group: ${env.TARGET_DISCUSSION_GROUP_ID}`);
+                } catch (error) {
+                  console.error(`❌ Failed to post explanation to discussion group:`, error);
+                }
+              }
               
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `📤 **Question #${idx + 1} posted successfully!**\n\n✅ **Posted to:** ${successCount} targets\n❌ **Failed:** ${errorCount} targets\n\n**Question:** ${truncate(question.question, 100)}...`);
             } else {
