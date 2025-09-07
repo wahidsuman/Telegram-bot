@@ -2237,7 +2237,7 @@ export default {
                     hasAnswer: !!question?.answer, 
                     hasExplanation: !!question?.explanation 
                   });
-                  await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question data corrupted', true);
+                  await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question data corrupted\n\n𝐉𝐨𝐢𝐧 𝐝𝐢𝐬𝐜𝐮𝐬𝐬𝐢𝐨𝐧 𝐠𝐫𝐨𝐮𝐩 𝐟𝐨𝐫 𝐟𝐮𝐥𝐥 𝐞𝐱𝐩𝐥𝐚𝐧𝐚𝐭𝐢𝐨𝐧', true);
                   return new Response('OK');
                 }
                 
@@ -2250,7 +2250,7 @@ export default {
                 
                 // Add truncated explanation if available
                 if (question.explanation) {
-                  const remainingChars = 190 - popupMessage.length;
+                  const remainingChars = 150 - popupMessage.length; // Reduced to make room for Latin text
                   if (remainingChars > 20) {
                     let truncatedExplanation = question.explanation;
                     if (truncatedExplanation.length > remainingChars) {
@@ -2259,6 +2259,9 @@ export default {
                     popupMessage += `\n\n${truncatedExplanation}`;
                   }
                 }
+                
+                // Add Latin text at the bottom
+                popupMessage += `\n\n𝐉𝐨𝐢𝐧 𝐝𝐢𝐬𝐜𝐮𝐬𝐬𝐢𝐨𝐧 𝐠𝐫𝐨𝐮𝐩 𝐟𝐨𝐫 𝐟𝐮𝐥𝐥 𝐞𝐱𝐩𝐥𝐚𝐧𝐚𝐭𝐢𝐨𝐧`;
                 
                 console.log('Sending popup:', { 
                   isCorrect, 
@@ -2289,11 +2292,11 @@ export default {
                   
               } else {
                 console.error('Question not found:', { qid, totalQuestions: questions.length });
-                await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question not found', true);
+                await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Question not found\n\n𝐉𝐨𝐢𝐧 𝐝𝐢𝐬𝐜𝐮𝐬𝐬𝐢𝐨𝐧 𝐠𝐫𝐨𝐮𝐩 𝐟𝐨𝐫 𝐟𝐮𝐥𝐥 𝐞𝐱𝐩𝐥𝐚𝐧𝐚𝐭𝐢𝐨𝐧', true);
               }
             } catch (error) {
               console.error('Error in answer callback handler:', error);
-              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Error processing answer', true);
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Error processing answer\n\n𝐉𝐨𝐢𝐧 𝐝𝐢𝐬𝐜𝐮𝐬𝐬𝐢𝐨𝐧 𝐠𝐫𝐨𝐮𝐩 𝐟𝐨𝐫 𝐟𝐮𝐥𝐥 𝐞𝐱𝐩𝐥𝐚𝐧𝐚𝐭𝐢𝐨𝐧', true);
             }
             
             return new Response('OK');
