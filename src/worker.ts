@@ -170,6 +170,26 @@ async function sendMessage(token: string, chatId: string | number, text: string,
   }
 }
 
+async function editMessageReplyMarkup(token: string, chatId: string | number, messageId: number, replyMarkup: any): Promise<any> {
+  try {
+    const url = `https://api.telegram.org/bot${token}/editMessageReplyMarkup`;
+    const body = {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: replyMarkup
+    };
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    return await response.json();
+  } catch (error) {
+    console.error('Error editing message reply markup:', error);
+    return null;
+  }
+}
+
 async function editMessageText(token: string, chatId: string | number, messageId: number, text: string, options?: any): Promise<any> {
   try {
     console.log('editMessageText called:', { chatId, messageId, text: text.substring(0, 100) });
@@ -1015,6 +1035,47 @@ async function uploadQuestionsFromFile(kv: KVNamespace, token: string, fileId: s
   };
 }
 
+function buildAdminPanelKeyboard(stopButtonText: string, showScheduleOptions: boolean = false, currentSchedule: string = '1'): any {
+  const scheduleOptions = [
+    { hours: 1, label: 'Hourly' },
+    { hours: 2, label: '2 Hourly' },
+    { hours: 4, label: '4 Hourly' },
+    { hours: 8, label: '8 Hourly' },
+    { hours: 12, label: '12 Hourly' },
+    { hours: 24, label: '24 Hourly (Daily)' }
+  ];
+
+  const keyboard = [
+    [{ text: '📤 Upload Questions', callback_data: 'admin:upload' }],
+    [{ text: '📊 Daily Report', callback_data: 'admin:daily' }],
+    [{ text: '📈 Monthly Report', callback_data: 'admin:monthly' }],
+    [{ text: '⏭️ Post Next Now', callback_data: 'admin:postNow' }],
+    [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
+    [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
+    [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
+    [{ text: stopButtonText, callback_data: 'admin:stopPosts' }, { text: '⏰ Schedule', callback_data: 'admin:schedule' }]
+  ];
+
+  if (showScheduleOptions) {
+    // Add schedule options after the start/stop and schedule buttons
+    scheduleOptions.forEach(opt => {
+      keyboard.push([{ 
+        text: `${opt.hours == parseInt(currentSchedule) ? '✅ ' : '⚪ '}${opt.label}`,
+        callback_data: `admin:setSchedule:${opt.hours}`
+      }]);
+    });
+  }
+
+  keyboard.push(
+    [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
+    [{ text: '🎯 Jump to Question', callback_data: 'admin:jumpToQuestion' }],
+    [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }],
+    [{ text: '🔧 Check User Stats', callback_data: 'admin:checkUserStats' }]
+  );
+
+  return { inline_keyboard: keyboard };
+}
+
 async function formatDailyReport(kv: KVNamespace, date: string): Promise<string> {
   console.log('formatDailyReport called for date:', date);
   
@@ -1615,23 +1676,8 @@ export default {
               const stopButtonText = isStopped === '1' ? '▶️ Start' : '⏸️ Stop';
               
               // Show admin panel
-              const keyboard = {
-                inline_keyboard: [
-                  [{ text: '📤 Upload Questions', callback_data: 'admin:upload' }],
-                  [{ text: '📊 Daily Report', callback_data: 'admin:daily' }],
-                  [{ text: '📈 Monthly Report', callback_data: 'admin:monthly' }],
-                  [{ text: '⏭️ Post Next Now', callback_data: 'admin:postNow' }],
-                  [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
-                  [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
-                  [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
-                  [{ text: stopButtonText, callback_data: 'admin:stopPosts' }, { text: '⏰ Schedule', callback_data: 'admin:schedule' }],
-                  [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
-                  [{ text: '🎯 Jump to Question', callback_data: 'admin:jumpToQuestion' }],
-                  [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }],
-                  [{ text: '🔧 Check User Stats', callback_data: 'admin:checkUserStats' }]
-                ]
-              };
-                              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v2.0', { reply_markup: keyboard });
+              const keyboard = buildAdminPanelKeyboard(stopButtonText);
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v2.0', { reply_markup: keyboard });
                return new Response('OK');
             } else {
                         // Track unique user interaction
@@ -1854,23 +1900,8 @@ export default {
               const isStopped = await env.STATE.get('admin:postsStopped');
               const stopButtonText = isStopped === '1' ? '▶️ Start' : '⏸️ Stop';
               
-              const keyboard = {
-                inline_keyboard: [
-                  [{ text: '📤 Upload Questions', callback_data: 'admin:upload' }],
-                  [{ text: '📊 Daily Report', callback_data: 'admin:daily' }],
-                  [{ text: '📈 Monthly Report', callback_data: 'admin:monthly' }],
-                  [{ text: '⏭️ Post Next Now', callback_data: 'admin:postNow' }],
-                  [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
-                  [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
-                  [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
-                  [{ text: stopButtonText, callback_data: 'admin:stopPosts' }, { text: '⏰ Schedule', callback_data: 'admin:schedule' }],
-                  [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
-                  [{ text: '🎯 Jump to Question', callback_data: 'admin:jumpToQuestion' }],
-                  [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
-                ]
-              };
-              
-                             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v2.0', { reply_markup: keyboard });
+              const keyboard = buildAdminPanelKeyboard(stopButtonText);
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v2.0', { reply_markup: keyboard });
             } else if (message.text === '/whoami') {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `You are: id=${message.from?.id}, username=@${message.from?.username || ''}\n\nAdmin Chat ID: ${env.ADMIN_CHAT_ID}\nIs Admin: ${isAdmin}\nChat ID: ${chatId}`);
             } else if (message.text === '/addbutton') {
@@ -2606,65 +2637,66 @@ export default {
               }
 
             } else if (data === 'admin:schedule') {
-              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Opening schedule options...');
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Toggle schedule options...');
+              
+              // Check if posts are stopped
+              const isStopped = await env.STATE.get('admin:postsStopped');
+              const stopButtonText = isStopped === '1' ? '▶️ Start' : '⏸️ Stop';
               
               // Get current schedule
               const currentSchedule = await env.STATE.get('admin:postSchedule') || '1';
-              const scheduleOptions = [
-                { hours: 1, label: 'Hourly' },
-                { hours: 2, label: '2 Hourly' },
-                { hours: 4, label: '4 Hourly' },
-                { hours: 8, label: '8 Hourly' },
-                { hours: 12, label: '12 Hourly' },
-                { hours: 24, label: '24 Hourly (Daily)' }
-              ];
               
-              const keyboard = {
-                inline_keyboard: scheduleOptions.map(opt => [{
-                  text: `${opt.hours == currentSchedule ? '✅ ' : ''}${opt.label}`,
-                  callback_data: `admin:setSchedule:${opt.hours}`
-                }])
-              };
+              // Check if we're currently showing schedule options
+              const showingSchedule = await env.STATE.get('admin:showingSchedule');
+              const shouldShowSchedule = showingSchedule !== '1';
               
-              keyboard.inline_keyboard.push([{ text: '⬅️ Back to Admin Panel', callback_data: 'admin:back' }]);
+              // Toggle the state
+              if (shouldShowSchedule) {
+                await env.STATE.put('admin:showingSchedule', '1');
+              } else {
+                await env.STATE.delete('admin:showingSchedule');
+              }
               
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
-                `📅 **Post Schedule Settings**\n\n` +
-                `Current schedule: **${scheduleOptions.find(o => o.hours == parseInt(currentSchedule))?.label || 'Hourly'}**\n\n` +
-                `Select how often questions should be posted:`,
-                { reply_markup: keyboard }
-              );
+              // Build keyboard with or without schedule options
+              const keyboard = buildAdminPanelKeyboard(stopButtonText, shouldShowSchedule, currentSchedule);
+              
+              // Update the message
+              if (query.message?.message_id) {
+                await editMessageReplyMarkup(env.TELEGRAM_BOT_TOKEN, chatId!, query.message.message_id, keyboard);
+              }
               
             } else if (data.startsWith('admin:setSchedule:')) {
               const hours = data.split(':')[2];
               await env.STATE.put('admin:postSchedule', hours);
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '✅ Schedule updated!');
               
-              // Update the schedule display
-              const scheduleOptions = [
-                { hours: 1, label: 'Hourly' },
-                { hours: 2, label: '2 Hourly' },
-                { hours: 4, label: '4 Hourly' },
-                { hours: 8, label: '8 Hourly' },
-                { hours: 12, label: '12 Hourly' },
-                { hours: 24, label: '24 Hourly (Daily)' }
-              ];
+              // Hide schedule options after selection
+              await env.STATE.delete('admin:showingSchedule');
               
-              const keyboard = {
-                inline_keyboard: scheduleOptions.map(opt => [{
-                  text: `${opt.hours == hours ? '✅ ' : ''}${opt.label}`,
-                  callback_data: `admin:setSchedule:${opt.hours}`
-                }])
+              // Check if posts are stopped
+              const isStopped = await env.STATE.get('admin:postsStopped');
+              const stopButtonText = isStopped === '1' ? '▶️ Start' : '⏸️ Stop';
+              
+              // Build keyboard without schedule options
+              const keyboard = buildAdminPanelKeyboard(stopButtonText, false);
+              
+              // Get schedule label
+              const scheduleLabels: Record<string, string> = {
+                '1': 'Hourly',
+                '2': '2 Hourly',
+                '4': '4 Hourly',
+                '8': '8 Hourly',
+                '12': '12 Hourly',
+                '24': '24 Hourly (Daily)'
               };
               
-              keyboard.inline_keyboard.push([{ text: '⬅️ Back to Admin Panel', callback_data: 'admin:back' }]);
-              
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
-                `✅ **Schedule Updated!**\n\n` +
-                `Questions will now be posted: **${scheduleOptions.find(o => o.hours == parseInt(hours))?.label}**\n\n` +
-                `Note: The bot still runs hourly, but will only post based on your schedule.`,
-                { reply_markup: keyboard }
-              );
+              // Update the message
+              if (query.message?.message_id) {
+                await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId!, query.message.message_id,
+                  `Admin Panel v2.0\n\n✅ Schedule updated to: **${scheduleLabels[hours]}**`,
+                  { reply_markup: keyboard }
+                );
+              }
               
             } else if (data === 'admin:back') {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Going back...');
@@ -2673,22 +2705,10 @@ export default {
               const isStopped = await env.STATE.get('admin:postsStopped');
               const stopButtonText = isStopped === '1' ? '▶️ Start' : '⏸️ Stop';
               
-              const keyboard = {
-                inline_keyboard: [
-                  [{ text: '📤 Upload Questions', callback_data: 'admin:upload' }],
-                  [{ text: '📊 Daily Report', callback_data: 'admin:daily' }],
-                  [{ text: '📈 Monthly Report', callback_data: 'admin:monthly' }],
-                  [{ text: '⏭️ Post Next Now', callback_data: 'admin:postNow' }],
-                  [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
-                  [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
-                  [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
-                  [{ text: stopButtonText, callback_data: 'admin:stopPosts' }, { text: '⏰ Schedule', callback_data: 'admin:schedule' }],
-                  [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
-                  [{ text: '🎯 Jump to Question', callback_data: 'admin:jumpToQuestion' }],
-                  [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }],
-                  [{ text: '🔧 Check User Stats', callback_data: 'admin:checkUserStats' }]
-                ]
-              };
+              // Hide schedule options if they were showing
+              await env.STATE.delete('admin:showingSchedule');
+              
+              const keyboard = buildAdminPanelKeyboard(stopButtonText, false);
               
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Admin Panel v2.0', { reply_markup: keyboard });
               
