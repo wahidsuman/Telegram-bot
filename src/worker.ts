@@ -1050,6 +1050,7 @@ function buildAdminPanelKeyboard(stopButtonText: string, showScheduleOptions: bo
     [{ text: '📊 Daily Report', callback_data: 'admin:daily' }],
     [{ text: '📈 Monthly Report', callback_data: 'admin:monthly' }],
     [{ text: '⏭️ Post Next Now', callback_data: 'admin:postNow' }],
+    [{ text: '🔢 Start from Question #', callback_data: 'admin:startFrom' }],
     [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
     [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
     [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
@@ -1731,10 +1732,11 @@ export default {
              message.from.username.toLowerCase() === env.ADMIN_USERNAME.toLowerCase());
           if (isAdmin) {
             // Admin commands - batch KV reads for better performance
-            const [broadcastPending, editIdxStr, replyPendingUser] = await Promise.all([
+            const [broadcastPending, editIdxStr, replyPendingUser, startFromPending] = await Promise.all([
               env.STATE.get('admin:broadcast:pending'),
               env.STATE.get('admin:edit:idx'),
-              env.STATE.get('admin:reply:pending')
+              env.STATE.get('admin:reply:pending'),
+              env.STATE.get('admin:startFrom:pending')
             ]);
             if (replyPendingUser) {
               try {
@@ -1783,6 +1785,39 @@ export default {
               } catch (error) {
                 await env.STATE.delete('admin:broadcast:pending');
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Broadcast failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              }
+            } else if (startFromPending) {
+              if (message.text) {
+                const inputNumber = parseInt(message.text.trim(), 10);
+                const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+                
+                if (isNaN(inputNumber)) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ Please enter a valid number.');
+                  return new Response('OK');
+                }
+                
+                if (inputNumber < 1 || inputNumber > questions.length) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                    `❌ Invalid question number. Please enter a number between 1 and ${questions.length}.`
+                  );
+                  return new Response('OK');
+                }
+                
+                // Convert to 0-based index
+                const newIndex = inputNumber - 1;
+                
+                // Update the global index
+                await putJSON(env.STATE, 'idx:global', newIndex);
+                await env.STATE.delete('admin:startFrom:pending');
+                
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                  `✅ **Posting sequence reset!**\n\n` +
+                  `The next question to be posted will be:\n` +
+                  `**Question #${inputNumber}**\n\n` +
+                  `All subsequent posts will continue from this point in sequence.`
+                );
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ Please send a number to set the starting question.');
               }
             } else if (editIdxStr) {
               try {
@@ -1891,6 +1926,7 @@ export default {
                 await env.STATE.delete('admin:addDiscount:pending');
                 await env.STATE.delete('admin:editDiscount:pending');
                 await env.STATE.delete('admin:checkUserStats:pending');
+                await env.STATE.delete('admin:startFrom:pending');
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ All pending operations cancelled. You can now upload questions normally.');
                 return new Response('OK');
               }
@@ -2578,6 +2614,25 @@ export default {
             const unsent = Math.max(0, total - sent);
             const msg = `🗄️ DB Status\n\n• Total questions: ${total}\n• Current index: ${sent}\n• Unsent: ${unsent}\n• Active targets: ${allTargets.length} groups/channels`;
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, msg);
+          } else if (data === 'admin:startFrom') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            await env.STATE.put('admin:startFrom:pending', '1');
+            
+            const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
+            const currentIndex = await getJSON<number>(env.STATE, 'idx:global', 0);
+            
+            const kb = { inline_keyboard: [[{ text: '✖️ Cancel', callback_data: 'admin:startFromCancel' }]] };
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+              `🔢 **Start from Question #**\n\n` +
+              `Current question index: **${currentIndex + 1}**\n` +
+              `Total questions: **${questions.length}**\n\n` +
+              `Enter the question number (1-${questions.length}) to start posting from:`,
+              { reply_markup: kb }
+            );
+          } else if (data === 'admin:startFromCancel') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
+            await env.STATE.delete('admin:startFrom:pending');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❎ Start from question cancelled');
           } else if (data === 'admin:broadcast') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             await env.STATE.put('admin:broadcast:pending', '1');
