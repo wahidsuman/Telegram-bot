@@ -1680,7 +1680,7 @@ export default {
               
               // Show admin panel
               const keyboard = buildAdminPanelKeyboard(stopButtonText);
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v5.0', { reply_markup: keyboard });
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v5.1', { reply_markup: keyboard });
                return new Response('OK');
             } else {
                         // Track unique user interaction
@@ -1756,27 +1756,25 @@ export default {
                 let successCount = 0;
                 let errorCount = 0;
                 
-                // Broadcast to main group
-                try {
-                  await copyMessage(env.TELEGRAM_BOT_TOKEN, chatId, message.message_id, env.TARGET_GROUP_ID);
-                  successCount++;
-                } catch (error) {
-                  errorCount++;
-                  console.error('Broadcast to main group failed:', error);
-                }
+                // Get all targets from bot:targets
+                const allTargets = await getJSON<string[]>(env.STATE, 'bot:targets', []);
                 
-                // Broadcast to channel if configured
-                if (env.TARGET_CHANNEL_ID) {
+                // Broadcast to all targets (excluding discussion group)
+                for (const targetId of allTargets) {
+                  // Skip discussion group - it only gets explanations
+                  if (targetId === env.TARGET_DISCUSSION_GROUP_ID) {
+                    continue;
+                  }
+                  
                   try {
-                    await copyMessage(env.TELEGRAM_BOT_TOKEN, chatId, message.message_id, env.TARGET_CHANNEL_ID);
+                    await copyMessage(env.TELEGRAM_BOT_TOKEN, chatId, message.message_id, targetId);
                     successCount++;
+                    console.log(`✅ Broadcast to ${targetId} successful`);
                   } catch (error) {
                     errorCount++;
-                    console.error('Broadcast to channel failed:', error);
+                    console.error(`❌ Broadcast to ${targetId} failed:`, error);
                   }
                 }
-                
-                // DO NOT broadcast to discussion group - it only gets explanations
                 
                 await env.STATE.delete('admin:broadcast:pending');
                 
@@ -2001,7 +1999,7 @@ export default {
               const stopButtonText = isStopped === '1' ? '▶️ Start' : '⏸️ Stop';
               
               const keyboard = buildAdminPanelKeyboard(stopButtonText);
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v5.0', { reply_markup: keyboard });
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v5.1', { reply_markup: keyboard });
             } else if (message.text === '/whoami') {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `You are: id=${message.from?.id}, username=@${message.from?.username || ''}\n\nAdmin Chat ID: ${env.ADMIN_CHAT_ID}\nIs Admin: ${isAdmin}\nChat ID: ${chatId}`);
             } else if (message.text === '/addbutton') {
@@ -2901,7 +2899,7 @@ export default {
               // Update the message
               if (query.message?.message_id) {
                 await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId!, query.message.message_id,
-                  `Admin Panel v5.0\n\n✅ Schedule updated to: **${scheduleLabels[hours]}**`,
+                  `Admin Panel v5.1\n\n✅ Schedule updated to: **${scheduleLabels[hours]}**`,
                   { reply_markup: keyboard }
                 );
               }
@@ -2918,7 +2916,7 @@ export default {
               
               const keyboard = buildAdminPanelKeyboard(stopButtonText, false);
               
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Admin Panel v5.0', { reply_markup: keyboard });
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Admin Panel v5.1', { reply_markup: keyboard });
               
             } else if (data === 'admin:checkDataIntegrity') {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '🔍 Checking data integrity...');
