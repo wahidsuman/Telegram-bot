@@ -1631,7 +1631,7 @@ export default {
                   [{ text: '🔧 Check User Stats', callback_data: 'admin:checkUserStats' }]
                 ]
               };
-                              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v1.0', { reply_markup: keyboard });
+                              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v2.0', { reply_markup: keyboard });
                return new Response('OK');
             } else {
                         // Track unique user interaction
@@ -1870,7 +1870,7 @@ export default {
                 ]
               };
               
-                             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v1.0', { reply_markup: keyboard });
+                             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v2.0', { reply_markup: keyboard });
             } else if (message.text === '/whoami') {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `You are: id=${message.from?.id}, username=@${message.from?.username || ''}\n\nAdmin Chat ID: ${env.ADMIN_CHAT_ID}\nIs Admin: ${isAdmin}\nChat ID: ${chatId}`);
             } else if (message.text === '/addbutton') {
@@ -2690,7 +2690,7 @@ export default {
                 ]
               };
               
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Admin Panel v1.0', { reply_markup: keyboard });
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Admin Panel v2.0', { reply_markup: keyboard });
               
             } else if (data === 'admin:checkDataIntegrity') {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '🔍 Checking data integrity...');
