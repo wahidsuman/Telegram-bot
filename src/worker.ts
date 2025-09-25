@@ -1053,6 +1053,8 @@ function buildAdminPanelKeyboard(stopButtonText: string, showScheduleOptions: bo
     [{ text: '🔢 Start from Question #', callback_data: 'admin:startFrom' }],
     [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
     [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
+    [{ text: '➕ Add Question Target', callback_data: 'admin:addTarget' }],
+    [{ text: '📋 Manage Question Targets', callback_data: 'admin:manageTargets' }],
     [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
     [{ text: stopButtonText, callback_data: 'admin:stopPosts' }, { text: '⏰ Schedule', callback_data: 'admin:schedule' }]
   ];
@@ -1678,7 +1680,7 @@ export default {
               
               // Show admin panel
               const keyboard = buildAdminPanelKeyboard(stopButtonText);
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v3.0', { reply_markup: keyboard });
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v4.0', { reply_markup: keyboard });
                return new Response('OK');
             } else {
                         // Track unique user interaction
@@ -1732,11 +1734,12 @@ export default {
              message.from.username.toLowerCase() === env.ADMIN_USERNAME.toLowerCase());
           if (isAdmin) {
             // Admin commands - batch KV reads for better performance
-            const [broadcastPending, editIdxStr, replyPendingUser, startFromPending] = await Promise.all([
+            const [broadcastPending, editIdxStr, replyPendingUser, startFromPending, addTargetPending] = await Promise.all([
               env.STATE.get('admin:broadcast:pending'),
               env.STATE.get('admin:edit:idx'),
               env.STATE.get('admin:reply:pending'),
-              env.STATE.get('admin:startFrom:pending')
+              env.STATE.get('admin:startFrom:pending'),
+              env.STATE.get('admin:addTarget:pending')
             ]);
             if (replyPendingUser) {
               try {
@@ -1818,6 +1821,66 @@ export default {
                 );
               } else {
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ Please send a number to set the starting question.');
+              }
+            } else if (addTargetPending) {
+              if (message.text) {
+                const newTarget = message.text.trim();
+                
+                // Validate it looks like a chat ID
+                if (!newTarget.match(/^-?\d+$/)) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ Invalid chat ID format. Please send a valid chat ID (negative number for groups/channels).');
+                  return new Response('OK');
+                }
+                
+                // Check if it's the discussion group
+                if (newTarget === env.TARGET_DISCUSSION_GROUP_ID) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ Cannot add the discussion group as a question target. It only receives explanations.');
+                  return new Response('OK');
+                }
+                
+                // Get current targets
+                const allTargets = await getJSON<string[]>(env.STATE, 'bot:targets', []);
+                
+                // Check if already exists
+                if (allTargets.includes(newTarget)) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '⚠️ This target is already in the list.');
+                  await env.STATE.delete('admin:addTarget:pending');
+                  return new Response('OK');
+                }
+                
+                // Try to send a test message to verify the bot has access
+                try {
+                  const testMsg = await sendMessage(env.TELEGRAM_BOT_TOKEN, newTarget, 
+                    '🤖 Test message from MCQ Bot\n\nThis chat has been added as a question target.\nQuestions will be posted here.');
+                  
+                  if (!testMsg || !testMsg.ok) {
+                    await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                      '❌ Failed to send test message. Make sure:\n' +
+                      '• The chat ID is correct\n' +
+                      '• The bot is added to the group/channel\n' +
+                      '• The bot has admin permissions');
+                    return new Response('OK');
+                  }
+                  
+                  // Add to targets
+                  allTargets.push(newTarget);
+                  await putJSON(env.STATE, 'bot:targets', allTargets);
+                  await env.STATE.delete('admin:addTarget:pending');
+                  
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                    `✅ **Target Added Successfully!**\n\n` +
+                    `Chat ID: ${newTarget}\n` +
+                    `Total targets: ${allTargets.length}\n\n` +
+                    `Questions will now also be posted to this target.`
+                  );
+                } catch (error) {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
+                    `❌ Failed to add target: ${error instanceof Error ? error.message : 'Unknown error'}\n\n` +
+                    `Make sure the bot is admin in that group/channel.`
+                  );
+                }
+              } else {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ Please send a valid chat ID.');
               }
             } else if (editIdxStr) {
               try {
@@ -1927,6 +1990,7 @@ export default {
                 await env.STATE.delete('admin:editDiscount:pending');
                 await env.STATE.delete('admin:checkUserStats:pending');
                 await env.STATE.delete('admin:startFrom:pending');
+                await env.STATE.delete('admin:addTarget:pending');
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '✅ All pending operations cancelled. You can now upload questions normally.');
                 return new Response('OK');
               }
@@ -1937,7 +2001,7 @@ export default {
               const stopButtonText = isStopped === '1' ? '▶️ Start' : '⏸️ Stop';
               
               const keyboard = buildAdminPanelKeyboard(stopButtonText);
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v3.0', { reply_markup: keyboard });
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v4.0', { reply_markup: keyboard });
             } else if (message.text === '/whoami') {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `You are: id=${message.from?.id}, username=@${message.from?.username || ''}\n\nAdmin Chat ID: ${env.ADMIN_CHAT_ID}\nIs Admin: ${isAdmin}\nChat ID: ${chatId}`);
             } else if (message.text === '/addbutton') {
@@ -2652,6 +2716,95 @@ export default {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
             await env.STATE.delete('admin:broadcast:pending');
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❎ Broadcast cancelled');
+          } else if (data === 'admin:addTarget') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            await env.STATE.put('admin:addTarget:pending', '1');
+            const kb = { inline_keyboard: [[{ text: '✖️ Cancel', callback_data: 'admin:addTargetCancel' }]] };
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+              `➕ **Add Question Target**\n\n` +
+              `Please send the Chat ID of the group or channel where you want questions to be posted.\n\n` +
+              `📝 **How to get Chat ID:**\n` +
+              `• Add @RawDataBot to your group/channel\n` +
+              `• It will show the chat ID\n` +
+              `• Remove the bot after getting the ID\n\n` +
+              `⚠️ Make sure this bot is admin in that group/channel!`,
+              { reply_markup: kb }
+            );
+          } else if (data === 'admin:addTargetCancel') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Cancelled');
+            await env.STATE.delete('admin:addTarget:pending');
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❎ Add target cancelled');
+          } else if (data === 'admin:manageTargets') {
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
+            const allTargets = await getJSON<string[]>(env.STATE, 'bot:targets', []);
+            
+            if (allTargets.length === 0) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ No targets configured.');
+              return;
+            }
+            
+            // Create keyboard with remove buttons for each target
+            const keyboard: any[] = [];
+            for (const target of allTargets) {
+              // Don't allow removing the primary targets from env vars
+              const isPrimary = target === env.TARGET_GROUP_ID || target === env.TARGET_CHANNEL_ID;
+              const label = isPrimary ? `${target} (Primary)` : target;
+              
+              if (!isPrimary) {
+                keyboard.push([
+                  { text: `📍 ${label}`, callback_data: 'noop' },
+                  { text: '❌ Remove', callback_data: `admin:removeTarget:${target}` }
+                ]);
+              } else {
+                keyboard.push([{ text: `📍 ${label} 🔒`, callback_data: 'noop' }]);
+              }
+            }
+            
+            keyboard.push([{ text: '⬅️ Back', callback_data: 'admin:back' }]);
+            
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+              `📋 **Manage Question Targets**\n\n` +
+              `Total targets: ${allTargets.length}\n\n` +
+              `🔒 = Primary targets (cannot be removed)\n` +
+              `❌ = Click to remove target`,
+              { reply_markup: { inline_keyboard: keyboard } }
+            );
+          } else if (data.startsWith('admin:removeTarget:')) {
+            const targetToRemove = data.split(':')[2];
+            await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Removing target...');
+            
+            const allTargets = await getJSON<string[]>(env.STATE, 'bot:targets', []);
+            const newTargets = allTargets.filter(t => t !== targetToRemove);
+            await putJSON(env.STATE, 'bot:targets', newTargets);
+            
+            // Refresh the manage targets view
+            const keyboard: any[] = [];
+            for (const target of newTargets) {
+              const isPrimary = target === env.TARGET_GROUP_ID || target === env.TARGET_CHANNEL_ID;
+              const label = isPrimary ? `${target} (Primary)` : target;
+              
+              if (!isPrimary) {
+                keyboard.push([
+                  { text: `📍 ${label}`, callback_data: 'noop' },
+                  { text: '❌ Remove', callback_data: `admin:removeTarget:${target}` }
+                ]);
+              } else {
+                keyboard.push([{ text: `📍 ${label} 🔒`, callback_data: 'noop' }]);
+              }
+            }
+            
+            keyboard.push([{ text: '⬅️ Back', callback_data: 'admin:back' }]);
+            
+            if (query.message?.message_id) {
+              await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId!, query.message.message_id,
+                `📋 **Manage Question Targets**\n\n` +
+                `✅ Removed target: ${targetToRemove}\n\n` +
+                `Total targets: ${newTargets.length}\n\n` +
+                `🔒 = Primary targets (cannot be removed)\n` +
+                `❌ = Click to remove target`,
+                { reply_markup: { inline_keyboard: keyboard } }
+              );
+            }
 
                       } else if (data === 'admin:stopPosts') {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Stopping hourly posts...');
@@ -2748,7 +2901,7 @@ export default {
               // Update the message
               if (query.message?.message_id) {
                 await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId!, query.message.message_id,
-                  `Admin Panel v3.0\n\n✅ Schedule updated to: **${scheduleLabels[hours]}**`,
+                  `Admin Panel v4.0\n\n✅ Schedule updated to: **${scheduleLabels[hours]}**`,
                   { reply_markup: keyboard }
                 );
               }
@@ -2765,7 +2918,7 @@ export default {
               
               const keyboard = buildAdminPanelKeyboard(stopButtonText, false);
               
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Admin Panel v3.0', { reply_markup: keyboard });
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Admin Panel v4.0', { reply_markup: keyboard });
               
             } else if (data === 'admin:checkDataIntegrity') {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '🔍 Checking data integrity...');
