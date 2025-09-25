@@ -1680,7 +1680,7 @@ export default {
               
               // Show admin panel
               const keyboard = buildAdminPanelKeyboard(stopButtonText);
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v4.0', { reply_markup: keyboard });
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v5.0', { reply_markup: keyboard });
                return new Response('OK');
             } else {
                         // Track unique user interaction
@@ -2001,7 +2001,7 @@ export default {
               const stopButtonText = isStopped === '1' ? '▶️ Start' : '⏸️ Stop';
               
               const keyboard = buildAdminPanelKeyboard(stopButtonText);
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v4.0', { reply_markup: keyboard });
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Admin Panel v5.0', { reply_markup: keyboard });
             } else if (message.text === '/whoami') {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `You are: id=${message.from?.id}, username=@${message.from?.username || ''}\n\nAdmin Chat ID: ${env.ADMIN_CHAT_ID}\nIs Admin: ${isAdmin}\nChat ID: ${chatId}`);
             } else if (message.text === '/addbutton') {
@@ -2901,7 +2901,7 @@ export default {
               // Update the message
               if (query.message?.message_id) {
                 await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId!, query.message.message_id,
-                  `Admin Panel v4.0\n\n✅ Schedule updated to: **${scheduleLabels[hours]}**`,
+                  `Admin Panel v5.0\n\n✅ Schedule updated to: **${scheduleLabels[hours]}**`,
                   { reply_markup: keyboard }
                 );
               }
@@ -2918,7 +2918,7 @@ export default {
               
               const keyboard = buildAdminPanelKeyboard(stopButtonText, false);
               
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Admin Panel v4.0', { reply_markup: keyboard });
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Admin Panel v5.0', { reply_markup: keyboard });
               
             } else if (data === 'admin:checkDataIntegrity') {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '🔍 Checking data integrity...');
