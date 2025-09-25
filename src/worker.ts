@@ -1612,7 +1612,7 @@ export default {
             if (isAdmin) {
               // Check if posts are stopped
               const isStopped = await env.STATE.get('admin:postsStopped');
-              const stopButtonText = isStopped === '1' ? '🟢 Start Hourly Posts' : '⏸️ Stop Hourly Posts';
+              const stopButtonText = isStopped === '1' ? '▶️ Start' : '⏸️ Stop';
               
               // Show admin panel
               const keyboard = {
@@ -1624,7 +1624,7 @@ export default {
                   [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
                   [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
-                  [{ text: stopButtonText, callback_data: 'admin:stopPosts' }],
+                  [{ text: stopButtonText, callback_data: 'admin:stopPosts' }, { text: '⏰ Schedule', callback_data: 'admin:schedule' }],
                   [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
                   [{ text: '🎯 Jump to Question', callback_data: 'admin:jumpToQuestion' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }],
@@ -1852,7 +1852,7 @@ export default {
               
               // Check if posts are stopped
               const isStopped = await env.STATE.get('admin:postsStopped');
-              const stopButtonText = isStopped === '1' ? '🟢 Start Hourly Posts' : '⏸️ Stop Hourly Posts';
+              const stopButtonText = isStopped === '1' ? '▶️ Start' : '⏸️ Stop';
               
               const keyboard = {
                 inline_keyboard: [
@@ -1863,7 +1863,7 @@ export default {
                   [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
                   [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
                   [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
-                  [{ text: stopButtonText, callback_data: 'admin:stopPosts' }],
+                  [{ text: stopButtonText, callback_data: 'admin:stopPosts' }, { text: '⏰ Schedule', callback_data: 'admin:schedule' }],
                   [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
                   [{ text: '🎯 Jump to Question', callback_data: 'admin:jumpToQuestion' }],
                   [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }]
@@ -2575,23 +2575,123 @@ export default {
               if (isStopped === '1') {
                 // Start posts
                 await env.STATE.delete('admin:postsStopped');
+                
+                // Get current schedule
+                const scheduleHours = parseInt(await env.STATE.get('admin:postSchedule') || '1');
+                const scheduleLabels: Record<number, string> = {
+                  1: 'hourly',
+                  2: 'every 2 hours',
+                  4: 'every 4 hours',
+                  8: 'every 8 hours',
+                  12: 'every 12 hours',
+                  24: 'daily'
+                };
+                
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
-                  `✅ **Hourly posts STARTED!**\n\n` +
-                  `🟢 Bot will now post questions every hour automatically.\n` +
-                  `⏰ Next post will be at the top of the next hour.\n\n` +
-                  `📊 You can still use "Post Next Now" for manual posts.`
+                  `✅ **Posts STARTED!**\n\n` +
+                  `🟢 Bot will now post questions **${scheduleLabels[scheduleHours] || 'hourly'}**.\n` +
+                  `⏰ Posts will follow your schedule settings.\n\n` +
+                  `📊 You can still use "Post Next Now" for manual posts.\n` +
+                  `⚙️ Use "Schedule" button to change posting frequency.`
                 );
               } else {
                 // Stop posts
                 await env.STATE.put('admin:postsStopped', '1');
                 await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
-                  `⏸️ **Hourly posts STOPPED!**\n\n` +
+                  `⏸️ **Posts STOPPED!**\n\n` +
                   `🔴 Bot will NOT post questions automatically.\n` +
                   `📤 You can still use "Post Next Now" for manual posts.\n\n` +
-                  `🟢 Click "Stop Hourly Posts" again to restart automatic posting.`
+                  `🟢 Click "Start" to resume automatic posting.`
                 );
               }
 
+            } else if (data === 'admin:schedule') {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Opening schedule options...');
+              
+              // Get current schedule
+              const currentSchedule = await env.STATE.get('admin:postSchedule') || '1';
+              const scheduleOptions = [
+                { hours: 1, label: 'Hourly' },
+                { hours: 2, label: '2 Hourly' },
+                { hours: 4, label: '4 Hourly' },
+                { hours: 8, label: '8 Hourly' },
+                { hours: 12, label: '12 Hourly' },
+                { hours: 24, label: '24 Hourly (Daily)' }
+              ];
+              
+              const keyboard = {
+                inline_keyboard: scheduleOptions.map(opt => [{
+                  text: `${opt.hours == currentSchedule ? '✅ ' : ''}${opt.label}`,
+                  callback_data: `admin:setSchedule:${opt.hours}`
+                }])
+              };
+              
+              keyboard.inline_keyboard.push([{ text: '⬅️ Back to Admin Panel', callback_data: 'admin:back' }]);
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+                `📅 **Post Schedule Settings**\n\n` +
+                `Current schedule: **${scheduleOptions.find(o => o.hours == parseInt(currentSchedule))?.label || 'Hourly'}**\n\n` +
+                `Select how often questions should be posted:`,
+                { reply_markup: keyboard }
+              );
+              
+            } else if (data.startsWith('admin:setSchedule:')) {
+              const hours = data.split(':')[2];
+              await env.STATE.put('admin:postSchedule', hours);
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '✅ Schedule updated!');
+              
+              // Update the schedule display
+              const scheduleOptions = [
+                { hours: 1, label: 'Hourly' },
+                { hours: 2, label: '2 Hourly' },
+                { hours: 4, label: '4 Hourly' },
+                { hours: 8, label: '8 Hourly' },
+                { hours: 12, label: '12 Hourly' },
+                { hours: 24, label: '24 Hourly (Daily)' }
+              ];
+              
+              const keyboard = {
+                inline_keyboard: scheduleOptions.map(opt => [{
+                  text: `${opt.hours == hours ? '✅ ' : ''}${opt.label}`,
+                  callback_data: `admin:setSchedule:${opt.hours}`
+                }])
+              };
+              
+              keyboard.inline_keyboard.push([{ text: '⬅️ Back to Admin Panel', callback_data: 'admin:back' }]);
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 
+                `✅ **Schedule Updated!**\n\n` +
+                `Questions will now be posted: **${scheduleOptions.find(o => o.hours == parseInt(hours))?.label}**\n\n` +
+                `Note: The bot still runs hourly, but will only post based on your schedule.`,
+                { reply_markup: keyboard }
+              );
+              
+            } else if (data === 'admin:back') {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, 'Going back...');
+              
+              // Check if posts are stopped
+              const isStopped = await env.STATE.get('admin:postsStopped');
+              const stopButtonText = isStopped === '1' ? '▶️ Start' : '⏸️ Stop';
+              
+              const keyboard = {
+                inline_keyboard: [
+                  [{ text: '📤 Upload Questions', callback_data: 'admin:upload' }],
+                  [{ text: '📊 Daily Report', callback_data: 'admin:daily' }],
+                  [{ text: '📈 Monthly Report', callback_data: 'admin:monthly' }],
+                  [{ text: '⏭️ Post Next Now', callback_data: 'admin:postNow' }],
+                  [{ text: '🗄️ DB Status', callback_data: 'admin:dbstatus' }],
+                  [{ text: '📣 Broadcast to All Targets', callback_data: 'admin:broadcast' }],
+                  [{ text: '📚 View All Questions', callback_data: 'admin:listAll' }],
+                  [{ text: stopButtonText, callback_data: 'admin:stopPosts' }, { text: '⏰ Schedule', callback_data: 'admin:schedule' }],
+                  [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
+                  [{ text: '🎯 Jump to Question', callback_data: 'admin:jumpToQuestion' }],
+                  [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }],
+                  [{ text: '🔧 Check User Stats', callback_data: 'admin:checkUserStats' }]
+                ]
+              };
+              
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, 'Admin Panel v1.0', { reply_markup: keyboard });
+              
             } else if (data === 'admin:checkDataIntegrity') {
               await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '🔍 Checking data integrity...');
               
@@ -3357,16 +3457,37 @@ export default {
       // Check if posts are stopped
       const isStopped = await env.STATE.get('admin:postsStopped');
       if (isStopped === '1') {
-        console.log('Hourly posts are stopped. Skipping scheduled post.');
+        console.log('Posts are stopped. Skipping scheduled post.');
         return;
+      }
+      
+      // Check the schedule interval
+      const scheduleHours = parseInt(await env.STATE.get('admin:postSchedule') || '1');
+      const lastPostTime = await env.STATE.get('admin:lastScheduledPost');
+      const currentTime = new Date().getTime();
+      
+      if (lastPostTime) {
+        const lastPostTimestamp = parseInt(lastPostTime);
+        const hoursSinceLastPost = (currentTime - lastPostTimestamp) / (1000 * 60 * 60);
+        
+        if (hoursSinceLastPost < scheduleHours) {
+          console.log(`Skipping post. Schedule: ${scheduleHours}h, Hours since last post: ${hoursSinceLastPost.toFixed(2)}h`);
+          return;
+        }
       }
       
       await ensureKeys(env.STATE);
       await initializeBotIfNeeded(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
+      
       // Send 1 question per schedule tick
       for (let i = 0; i < 1; i++) {
         await postNextToAll(env.STATE, env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, env.TARGET_CHANNEL_ID, env.TARGET_DISCUSSION_GROUP_ID);
       }
+      
+      // Update last post time
+      await env.STATE.put('admin:lastScheduledPost', currentTime.toString());
+      console.log(`Posted at schedule interval: ${scheduleHours}h`);
+      
     } catch (error) {
       console.error('Scheduled error:', error);
     }
