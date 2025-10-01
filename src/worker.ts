@@ -258,7 +258,8 @@ async function answerCallbackQuery(token: string, queryId: string, text?: string
   const url = `https://api.telegram.org/bot${token}/answerCallbackQuery`;
   const body: any = {
     callback_query_id: queryId,
-    show_alert: showAlert === true  // Explicitly check for true
+    show_alert: showAlert === true,  // Explicitly check for true
+    cache_time: 0  // Critical: Don't cache responses - allows multiple popups
   };
   
   // Only add text if provided (empty text causes notification instead of alert)
@@ -2580,6 +2581,10 @@ export default {
                 
                 // Add Latin text at the bottom
                 popupMessage += `\n\n𝐉𝐨𝐢𝐧 𝐝𝐢𝐬𝐜𝐮𝐬𝐬𝐢𝐨𝐧 𝐠𝐫𝐨𝐮𝐩 𝐟𝐨𝐫 𝐟𝐮𝐥𝐥 𝐞𝐱𝐩𝐥𝐚𝐧𝐚𝐭𝐢𝐨𝐧`;
+                
+                // Add invisible zero-width space to make each popup unique (prevents Telegram caching)
+                // This ensures popups show every time, even for repeat clicks
+                popupMessage += String.fromCharCode(8203); // Zero-width space
                 
                 console.log('Sending popup:', { 
                   isCorrect, 
