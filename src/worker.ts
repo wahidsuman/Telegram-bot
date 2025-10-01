@@ -256,10 +256,11 @@ async function answerCallbackQuery(token: string, queryId: string, text?: string
     showAlert 
   });
   const url = `https://api.telegram.org/bot${token}/answerCallbackQuery`;
-  const body = {
+  const body: any = {
     callback_query_id: queryId,
     text: text,
-    show_alert: showAlert || false
+    show_alert: showAlert || false,
+    cache_time: 0  // Don't cache - allow multiple clicks on same button
   };
   console.log('Request body:', JSON.stringify(body));
   
