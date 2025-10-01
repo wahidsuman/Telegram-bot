@@ -25,6 +25,18 @@ interface Question {
   explanation: string;
 }
 
+interface QuestionStats {
+  A: number;
+  B: number;
+  C: number;
+  D: number;
+  total: number;
+  lastUpdated?: number; // timestamp for batch updates
+  messageIds?: { // track message IDs for updates
+    [chatId: string]: number;
+  };
+}
+
 interface DiscountButton {
   id: string;
   name: string;
