@@ -42,6 +42,18 @@ interface DayStats {
   users: Record<string, UserStats>;
 }
 
+interface QuestionStats {
+  A: number;
+  B: number;
+  C: number;
+  D: number;
+  total: number;
+  lastUpdated?: number; // timestamp for batch updates
+  messageIds?: { // track message IDs for updates
+    [chatId: string]: number;
+  };
+}
+
 interface TelegramMessage {
   message_id: number;
   from?: {
@@ -53,11 +65,14 @@ interface TelegramMessage {
   chat: {
     id: number;
     type: string;
+    title?: string;
   };
   text?: string;
   document?: {
     file_id: string;
     file_name?: string;
+    file_size?: number;
+    mime_type?: string;
   };
 }
 
@@ -161,9 +176,9 @@ async function sendMessage(token: string, chatId: string | number, text: string,
       body: JSON.stringify(body)
     });
     
-    const result = await response.json();
+    const result: any = await response.json();
     console.log('sendMessage result:', { ok: result.ok, status: response.status });
-    return result;
+    return result.result || result; // Return the message object
   } catch (error) {
     console.error('sendMessage error:', error);
     throw error;
@@ -208,7 +223,7 @@ async function editMessageText(token: string, chatId: string | number, messageId
       body: JSON.stringify(body)
     });
     
-    const result = await response.json();
+    const result: any = await response.json();
     console.log('editMessageText result:', { ok: result.ok, status: response.status });
     return result;
   } catch (error) {
@@ -255,7 +270,7 @@ async function answerCallbackQuery(token: string, queryId: string, text?: string
       body: JSON.stringify(body)
     });
     
-    const result = await response.json();
+    const result: any = await response.json();
     console.log('answerCallbackQuery result:', JSON.stringify(result));
     
     if (!result.ok) {
@@ -493,6 +508,9 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
   console.log(`Posting MCQ #${currentIndex + 1} to ${allTargets.length} groups/channels (excluding discussion group: ${discussionGroupId})`);
   console.log(`Targets for MCQ: ${allTargets.join(', ')}`);
   
+  // Object to store message IDs for this question
+  const messageIds: { [chatId: string]: number } = {};
+  
   for (const targetId of allTargets) {
     // Skip discussion group for MCQs
     if (discussionGroupId && targetId === discussionGroupId) {
@@ -501,11 +519,24 @@ async function postNextToAll(kv: KVNamespace, token: string, groupId: string, ex
     }
     
     try {
-      await sendMessage(token, targetId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
-      console.log(`✅ MCQ posted to: ${targetId}`);
+      const result = await sendMessage(token, targetId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
+      
+      // Store the message ID
+      if (result && result.message_id) {
+        messageIds[targetId] = result.message_id;
+      }
+      
+      console.log(`✅ MCQ posted to: ${targetId}, message ID: ${result?.message_id}`);
     } catch (error) {
       console.error(`❌ Failed to post MCQ to ${targetId}:`, error);
     }
+  }
+  
+  // Store message IDs for this question
+  if (Object.keys(messageIds).length > 0) {
+    const messageIdsKey = `qmsg:${currentIndex}`;
+    await putJSON(kv, messageIdsKey, messageIds);
+    console.log(`Stored message IDs for question ${currentIndex}:`, messageIds);
   }
   
   // POST EXPLANATION TO DISCUSSION GROUP ONLY
@@ -1116,7 +1147,121 @@ async function formatDailyReport(kv: KVNamespace, date: string): Promise<string>
   return report;
 }
 
-async function showQuestionNumberPage(kv: KVNamespace, token: string, chatId: string, page: number, totalQuestions: number, messageId?: number): Promise<void> {
+// Answer statistics functions
+async function updateQuestionStats(kv: KVNamespace, questionId: number, answer: string): Promise<QuestionStats> {
+  const statsKey = `qstats:${questionId}`;
+  const stats = await getJSON<QuestionStats>(kv, statsKey, {
+    A: 0, B: 0, C: 0, D: 0, total: 0
+  });
+  
+  // Update counts
+  stats[answer as keyof Pick<QuestionStats, 'A' | 'B' | 'C' | 'D'>]++;
+  stats.total++;
+  stats.lastUpdated = Date.now();
+  
+  await putJSON(kv, statsKey, stats);
+  return stats;
+}
+
+async function getQuestionStats(kv: KVNamespace, questionId: number): Promise<QuestionStats> {
+  const statsKey = `qstats:${questionId}`;
+  return await getJSON<QuestionStats>(kv, statsKey, {
+    A: 0, B: 0, C: 0, D: 0, total: 0
+  });
+}
+
+function calculatePercentages(stats: QuestionStats): { A: number; B: number; C: number; D: number } {
+  if (stats.total === 0) {
+    return { A: 0, B: 0, C: 0, D: 0 };
+  }
+  
+  return {
+    A: Math.round((stats.A / stats.total) * 100),
+    B: Math.round((stats.B / stats.total) * 100),
+    C: Math.round((stats.C / stats.total) * 100),
+    D: Math.round((stats.D / stats.total) * 100)
+  };
+}
+
+function shouldUpdateMessage(stats: QuestionStats): boolean {
+  const total = stats.total;
+  const lastUpdated = stats.lastUpdated || 0;
+  const timeSinceUpdate = Date.now() - lastUpdated;
+  
+  // Progressive update intervals based on total answers
+  if (total <= 10) return true; // Always update for first 10
+  if (total <= 50 && timeSinceUpdate > 2000) return true; // Every 2 seconds for 10-50
+  if (total <= 200 && timeSinceUpdate > 5000) return true; // Every 5 seconds for 50-200
+  if (total <= 1000 && timeSinceUpdate > 10000) return true; // Every 10 seconds for 200-1000
+  if (total <= 10000 && timeSinceUpdate > 30000) return true; // Every 30 seconds for 1000-10000
+  if (timeSinceUpdate > 60000) return true; // Every minute for 10000+
+  
+  return false;
+}
+
+async function updateQuestionMessages(
+  token: string,
+  kv: KVNamespace,
+  questionId: number,
+  question: Question,
+  stats: QuestionStats,
+  messageIds: { [chatId: string]: number }
+): Promise<void> {
+  console.log('Updating question messages with stats:', { questionId, total: stats.total });
+  
+  const percentages = calculatePercentages(stats);
+  
+  // Build updated message text with statistics
+  let text = `<b>🧠 Hourly MCQ #${questionId + 1}</b>\n\n`;
+  text += `<b>${esc(question.question)}</b>\n\n`;
+  text += `A) ${esc(question.options.A)}\n`;
+  text += `B) ${esc(question.options.B)}\n`;
+  text += `C) ${esc(question.options.C)}\n`;
+  text += `D) ${esc(question.options.D)}\n\n`;
+  
+  // Add statistics if there are answers
+  if (stats.total > 0) {
+    const totalText = stats.total >= 1000 ? `${Math.floor(stats.total / 1000)}K` : stats.total.toString();
+    text += `📊 <b>${totalText} answers</b>\n`;
+    text += `A: ${percentages.A}% | B: ${percentages.B}% | C: ${percentages.C}% | D: ${percentages.D}%\n\n`;
+  }
+  
+  text += `⬅️ Text Here For Any Query`;
+  
+  // Keep the same keyboard
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: 'A', callback_data: `ans:${questionId}:A` },
+        { text: 'B', callback_data: `ans:${questionId}:B` },
+        { text: 'C', callback_data: `ans:${questionId}:C` },
+        { text: 'D', callback_data: `ans:${questionId}:D` }
+      ],
+      [
+        { text: '💬 Join Discussion', url: 'https://t.me/+u0P8X-ZWHU1jMDQ1' },
+        { text: '📊 Your Stats', callback_data: 'user:stats' }
+      ]
+    ]
+  };
+  
+  // Update all messages in parallel
+  const updatePromises = [];
+  for (const [chatId, messageId] of Object.entries(messageIds)) {
+    updatePromises.push(
+      editMessageText(token, chatId, messageId, text, { 
+        reply_markup: keyboard, 
+        parse_mode: 'HTML' 
+      }).catch(err => {
+        console.error(`Failed to update message in chat ${chatId}:`, err);
+      })
+    );
+  }
+  
+  await Promise.all(updatePromises);
+  console.log(`Updated ${updatePromises.length} messages with statistics`);
+}
+
+async function showQuestionNumberPage(kv: KVNamespace, token: string, chatId: string | number, page: number, totalQuestions: number, messageId?: number): Promise<void> {
   const questionsPerPage = 20;
   const startQuestion = page * questionsPerPage + 1;
   const endQuestion = Math.min((page + 1) * questionsPerPage, totalQuestions);
@@ -1375,8 +1520,13 @@ export default {
             return new Response('OK');
           }
           
+          // Early admin check for test commands
+          const isAdminForTests = chatId.toString() === env.ADMIN_CHAT_ID || 
+            (env.ADMIN_USERNAME && message.from?.username && 
+             message.from.username.toLowerCase() === env.ADMIN_USERNAME.toLowerCase());
+          
           // Test posting to discussion group
-          if (message.text === '/testdiscussion' && isAdmin) {
+          if (message.text === '/testdiscussion' && isAdminForTests) {
             if (!env.TARGET_DISCUSSION_GROUP_ID) {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ TARGET_DISCUSSION_GROUP_ID is not set in environment');
               return new Response('OK');
@@ -1410,7 +1560,7 @@ export default {
           }
           
           // Test explanation posting
-          if (message.text === '/testexplain' && isAdmin) {
+          if (message.text === '/testexplain' && isAdminForTests) {
             if (!env.TARGET_DISCUSSION_GROUP_ID) {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ TARGET_DISCUSSION_GROUP_ID is not set');
               return new Response('OK');
@@ -1437,7 +1587,7 @@ export default {
           }
           
           // Debug command for admin
-          if (message.text === '/debug' && isAdmin) {
+          if (message.text === '/debug' && isAdminForTests) {
             const allTargets = await getJSON<string[]>(env.STATE, 'bot:targets', []);
             const indexKey = `idx:global`;
             const currentIndex = await getJSON<number>(env.STATE, indexKey, 0);
@@ -1462,7 +1612,7 @@ export default {
           }
           
           // Debug stats command
-          if (message.text === '/debugstats' && isAdmin) {
+          if (message.text === '/debugstats' && isAdminForTests) {
             const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
             const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
             
@@ -1494,7 +1644,7 @@ export default {
           }
           
           // Manual stats test command
-          if (message.text === '/teststats' && isAdmin) {
+          if (message.text === '/teststats' && isAdminForTests) {
             const testUserId = 123456789; // Test user ID
             const testQid = 0; // Test question ID
             
@@ -1528,7 +1678,7 @@ export default {
           }
           
           // Check specific user stats
-          if (message.text?.startsWith('/checkuser ') && isAdmin) {
+          if (message.text?.startsWith('/checkuser ') && isAdminForTests) {
             const checkUserId = message.text.split(' ')[1];
             if (!checkUserId) {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 'Usage: /checkuser <userId>');
@@ -1577,7 +1727,7 @@ export default {
           }
           
           // Quick reset to 40 command
-          if (message.text === '/reset40' && isAdmin) {
+          if (message.text === '/reset40' && isAdminForTests) {
             await putJSON(env.STATE, 'idx:global', 40);
             const questions = await getJSON<Question[]>(env.STATE, 'questions', []);
             await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, 
@@ -1588,7 +1738,7 @@ export default {
           }
           
           // Reset question index command
-          if (message.text?.startsWith('/resetindex ') && isAdmin) {
+          if (message.text?.startsWith('/resetindex ') && isAdminForTests) {
             const newIndex = parseInt(message.text.split(' ')[1]);
             
             if (isNaN(newIndex) || newIndex < 0) {
@@ -2083,7 +2233,7 @@ export default {
                     
                     // Validate question before adding
                     if (!validateQuestion(candidate)) {
-                      console.log(`Skipping invalid question: ${candidate.question?.substring(0, 30)}...`);
+                      console.log(`Skipping invalid question: ${(candidate as any).question?.substring(0, 30)}...`);
                       skipped++;
                       continue; // Skip invalid questions
                     }
@@ -2125,7 +2275,7 @@ export default {
                     
                     // Validate question before adding
                     if (!validateQuestion(candidate)) {
-                      console.log(`Single question validation failed: ${candidate.question?.substring(0, 30)}...`);
+                      console.log(`Single question validation failed: ${(candidate as any).question?.substring(0, 30)}...`);
                       await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '❌ Invalid question format. Please check all fields are complete.');
                       return new Response('OK');
                     }
@@ -2372,14 +2522,26 @@ export default {
                 
                 const isCorrect = answer === question.answer;
                 
+                // Get current question statistics
+                const currentStats = await getQuestionStats(env.STATE, qid);
+                const percentages = calculatePercentages(currentStats);
+                
                 // Build popup message with explanation
                 let popupMessage = isCorrect 
                   ? `✅ Correct!\n\nAnswer: ${question.answer}`
                   : `❌ Wrong!\n\nAnswer: ${question.answer}`;
                 
+                // Add statistics if available
+                if (currentStats.total > 0) {
+                  const totalText = currentStats.total >= 1000 ? `${Math.floor(currentStats.total / 1000)}K` : currentStats.total.toString();
+                  popupMessage += `\n\n📊 ${totalText} answers`;
+                  popupMessage += `\nA: ${percentages.A}% | B: ${percentages.B}%`;
+                  popupMessage += `\nC: ${percentages.C}% | D: ${percentages.D}%`;
+                }
+                
                 // Add truncated explanation if available
                 if (question.explanation) {
-                  const remainingChars = 150 - popupMessage.length; // Reduced to make room for Latin text
+                  const remainingChars = 200 - popupMessage.length; // Increased limit
                   if (remainingChars > 20) {
                     let truncatedExplanation = question.explanation;
                     if (truncatedExplanation.length > remainingChars) {
@@ -2407,6 +2569,22 @@ export default {
                 try {
                   await incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata');
                   console.log('Stats updated successfully for user:', userId, 'question:', qid, 'correct:', isCorrect);
+                  
+                  // Update question answer statistics
+                  const updatedStats = await updateQuestionStats(env.STATE, qid, answer);
+                  console.log('Question stats updated:', { qid, answer, total: updatedStats.total });
+                  
+                  // Check if we should update the message
+                  if (shouldUpdateMessage(updatedStats)) {
+                    // Get message IDs for this question
+                    const messageIdsKey = `qmsg:${qid}`;
+                    const messageIds = await getJSON<{ [chatId: string]: number }>(env.STATE, messageIdsKey, {});
+                    
+                    if (Object.keys(messageIds).length > 0) {
+                      // Update messages with new statistics
+                      await updateQuestionMessages(env.TELEGRAM_BOT_TOKEN, env.STATE, qid, question, updatedStats, messageIds);
+                    }
+                  }
                 } catch (err) {
                   console.error('CRITICAL: Stats update failed:', err);
                   // Log the error details for debugging
@@ -2738,7 +2916,7 @@ export default {
             
             if (allTargets.length === 0) {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ No targets configured.');
-              return;
+              return new Response('OK');
             }
             
             // Create keyboard with remove buttons for each target
@@ -2963,7 +3141,7 @@ export default {
                 } else {
                   corruptedQuestions++;
                   if (corruptedSamples.length < 3) {
-                    corruptedSamples.push(`${i + 1}. ${q.question?.substring(0, 50) || 'NO QUESTION'}... | Answer: ${q.answer || 'NO ANSWER'} | Explanation: ${q.explanation?.substring(0, 30) || 'NO EXPLANATION'}...`);
+                    corruptedSamples.push(`${i + 1}. ${(q as any).question?.substring(0, 50) || 'NO QUESTION'}... | Answer: ${(q as any).answer || 'NO ANSWER'} | Explanation: ${(q as any).explanation?.substring(0, 30) || 'NO EXPLANATION'}...`);
                   }
                 }
               }
@@ -3586,7 +3764,7 @@ export default {
           });
           const result = await response.json();
           return new Response(JSON.stringify({
-            success: result.ok,
+            success: (result as any).ok,
             result: result,
             webhookUrl: webhookUrl
           }, null, 2), {
