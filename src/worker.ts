@@ -1148,18 +1148,40 @@ async function formatDailyReport(kv: KVNamespace, date: string): Promise<string>
 }
 
 // Answer statistics functions
-async function updateQuestionStats(kv: KVNamespace, questionId: number, answer: string): Promise<QuestionStats> {
+async function updateQuestionStats(kv: KVNamespace, questionId: number, userId: number, answer: string): Promise<QuestionStats | null> {
   const statsKey = `qstats:${questionId}`;
-  const stats = await getJSON<QuestionStats>(kv, statsKey, {
-    A: 0, B: 0, C: 0, D: 0, total: 0
-  });
+  const userAnswersKey = `qanswers:${questionId}`;
+  
+  // Get current stats and user answers for this question
+  const [stats, userAnswers] = await Promise.all([
+    getJSON<QuestionStats>(kv, statsKey, {
+      A: 0, B: 0, C: 0, D: 0, total: 0
+    }),
+    getJSON<Record<string, string>>(kv, userAnswersKey, {})
+  ]);
+  
+  const userIdStr = userId.toString();
+  
+  // Check if user already answered this question
+  if (userAnswers[userIdStr]) {
+    console.log(`User ${userId} already answered question ${questionId} with ${userAnswers[userIdStr]}, skipping stats update`);
+    return null; // User already voted, don't update stats
+  }
+  
+  // Record user's answer
+  userAnswers[userIdStr] = answer;
   
   // Update counts
   stats[answer as keyof Pick<QuestionStats, 'A' | 'B' | 'C' | 'D'>]++;
   stats.total++;
   stats.lastUpdated = Date.now();
   
-  await putJSON(kv, statsKey, stats);
+  // Save both stats and user answers
+  await Promise.all([
+    putJSON(kv, statsKey, stats),
+    putJSON(kv, userAnswersKey, userAnswers)
+  ]);
+  
   return stats;
 }
 
@@ -2571,19 +2593,24 @@ export default {
                   console.log('Stats updated successfully for user:', userId, 'question:', qid, 'correct:', isCorrect);
                   
                   // Update question answer statistics
-                  const updatedStats = await updateQuestionStats(env.STATE, qid, answer);
-                  console.log('Question stats updated:', { qid, answer, total: updatedStats.total });
+                  const updatedStats = await updateQuestionStats(env.STATE, qid, userId, answer);
                   
-                  // Check if we should update the message
-                  if (shouldUpdateMessage(updatedStats)) {
-                    // Get message IDs for this question
-                    const messageIdsKey = `qmsg:${qid}`;
-                    const messageIds = await getJSON<{ [chatId: string]: number }>(env.STATE, messageIdsKey, {});
+                  if (updatedStats) {
+                    console.log('Question stats updated:', { qid, answer, total: updatedStats.total });
                     
-                    if (Object.keys(messageIds).length > 0) {
-                      // Update messages with new statistics
-                      await updateQuestionMessages(env.TELEGRAM_BOT_TOKEN, env.STATE, qid, question, updatedStats, messageIds);
+                    // Check if we should update the message
+                    if (shouldUpdateMessage(updatedStats)) {
+                      // Get message IDs for this question
+                      const messageIdsKey = `qmsg:${qid}`;
+                      const messageIds = await getJSON<{ [chatId: string]: number }>(env.STATE, messageIdsKey, {});
+                      
+                      if (Object.keys(messageIds).length > 0) {
+                        // Update messages with new statistics
+                        await updateQuestionMessages(env.TELEGRAM_BOT_TOKEN, env.STATE, qid, question, updatedStats, messageIds);
+                      }
                     }
+                  } else {
+                    console.log('User already answered this question, stats not updated');
                   }
                 } catch (err) {
                   console.error('CRITICAL: Stats update failed:', err);
