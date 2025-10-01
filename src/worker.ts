@@ -2549,26 +2549,14 @@ export default {
                 
                 const isCorrect = answer === question.answer;
                 
-                // Check if user already answered this question to show appropriate message
-                const userAnswersKey = `qanswers:${qid}`;
-                const userAnswers = await getJSON<Record<string, string>>(env.STATE, userAnswersKey, {});
-                const userIdStr = userId.toString();
-                const hasAnsweredBefore = !!userAnswers[userIdStr];
-                const previousAnswer = userAnswers[userIdStr];
-                
                 // Get current question statistics
                 const currentStats = await getQuestionStats(env.STATE, qid);
                 const percentages = calculatePercentages(currentStats);
                 
-                // Build popup message with explanation
+                // Build popup message with explanation - SAME for first and repeat attempts
                 let popupMessage = isCorrect 
                   ? `✅ Correct!\n\nAnswer: ${question.answer}`
                   : `❌ Wrong!\n\nAnswer: ${question.answer}`;
-                
-                // Add previous attempt info if this is a repeat
-                if (hasAnsweredBefore) {
-                  popupMessage += `\n(You answered ${previousAnswer} first)`;
-                }
                 
                 // Add statistics if available
                 if (currentStats.total > 0) {
@@ -2597,8 +2585,6 @@ export default {
                   isCorrect, 
                   correctAnswer: question.answer, 
                   userAnswer: answer,
-                  hasAnsweredBefore,
-                  previousAnswer,
                   popupLength: popupMessage.length
                 });
                 
