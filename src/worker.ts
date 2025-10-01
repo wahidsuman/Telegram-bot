@@ -2594,9 +2594,19 @@ export default {
                   popupLength: popupMessage.length
                 });
                 
-                // ALWAYS send popup - this is critical for multiple attempts
+                // ALWAYS send popup - show_alert: true for full popup experience
                 const result = await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, popupMessage, true);
                 console.log('Popup sent, result:', result);
+                
+                if (!result?.ok) {
+                  console.error('POPUP FAILED:', { 
+                    result, 
+                    queryId: query.id,
+                    messageLength: popupMessage.length,
+                    userId,
+                    answer
+                  });
+                }
                 
                 // Update stats - MUST await to ensure data is saved
                 try {
