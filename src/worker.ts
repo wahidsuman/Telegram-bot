@@ -2550,26 +2550,14 @@ export default {
                 
                 const isCorrect = answer === question.answer;
                 
-                // Get current question statistics
-                const currentStats = await getQuestionStats(env.STATE, qid);
-                const percentages = calculatePercentages(currentStats);
-                
-                // Build popup message with explanation - SAME for first and repeat attempts
+                // Build popup message with explanation - ORIGINAL LOGIC, NO STATS IN POPUP
                 let popupMessage = isCorrect 
                   ? `✅ Correct!\n\nAnswer: ${question.answer}`
                   : `❌ Wrong!\n\nAnswer: ${question.answer}`;
                 
-                // Add statistics if available
-                if (currentStats.total > 0) {
-                  const totalText = currentStats.total >= 1000 ? `${Math.floor(currentStats.total / 1000)}K` : currentStats.total.toString();
-                  popupMessage += `\n\n📊 ${totalText} answers`;
-                  popupMessage += `\nA: ${percentages.A}% | B: ${percentages.B}%`;
-                  popupMessage += `\nC: ${percentages.C}% | D: ${percentages.D}%`;
-                }
-                
                 // Add truncated explanation if available
                 if (question.explanation) {
-                  const remainingChars = 200 - popupMessage.length; // Increased limit
+                  const remainingChars = 150 - popupMessage.length; // Same as original
                   if (remainingChars > 20) {
                     let truncatedExplanation = question.explanation;
                     if (truncatedExplanation.length > remainingChars) {
@@ -2581,11 +2569,6 @@ export default {
                 
                 // Add Latin text at the bottom
                 popupMessage += `\n\n𝐉𝐨𝐢𝐧 𝐝𝐢𝐬𝐜𝐮𝐬𝐬𝐢𝐨𝐧 𝐠𝐫𝐨𝐮𝐩 𝐟𝐨𝐫 𝐟𝐮𝐥𝐥 𝐞𝐱𝐩𝐥𝐚𝐧𝐚𝐭𝐢𝐨𝐧`;
-                
-                // Add invisible unique identifier using zero-width spaces to prevent Telegram caching
-                // Each click gets a unique timestamp-based pattern that's invisible to users
-                const uniqueId = Date.now().toString().split('').map(d => String.fromCharCode(8203).repeat(parseInt(d) + 1)).join('');
-                popupMessage += uniqueId;
                 
                 console.log('Sending popup:', { 
                   isCorrect, 
