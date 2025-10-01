@@ -2698,13 +2698,20 @@ export default {
                try {
                  const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
                  const stats = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
-                 const entries = Object.entries(stats.users).map(([uid, s]) => ({ uid, cnt: s.cnt, correct: s.correct }));
-                 entries.sort((a, b) => b.cnt - a.cnt || b.correct - a.correct);
+                 const entries = Object.entries(stats.users).map(([uid, s]) => ({ 
+                   uid, 
+                   cnt: s.cnt, 
+                   correct: s.correct,
+                   accuracy: s.cnt > 0 ? Math.round((s.correct / s.cnt) * 100) : 0
+                 }));
+                 // Sort by accuracy first, then by attempts as tiebreaker
+                 entries.sort((a, b) => b.accuracy - a.accuracy || b.cnt - a.cnt);
                  const userIndex = entries.findIndex(e => e.uid === String(userId));
                  const rank = userIndex >= 0 ? userIndex + 1 : '—';
                  const me = stats.users[String(userId)] || { cnt: 0, correct: 0 };
-                 const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
-                 const header = `🏆 Daily Rank (${today})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
+                 const myAccuracy = me.cnt > 0 ? Math.round((me.correct / me.cnt) * 100) : 0;
+                 const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.accuracy}% (${e.correct}/${e.cnt})`);
+                 const header = `🏆 Daily Rank (${today})\nYour Rank: ${rank}\nYour Stats: ${myAccuracy}% accuracy (${me.correct}/${me.cnt})\n\nTop 10:`;
                  const body = top.length ? top.join('\n') : 'No activity yet.';
                  const welcomeMsg = 'Here for discount coupons? Click on "Get Code" button below and select Prepladder, Marrow, Cerebellum or any other discount coupons available in the market.You will get guaranteed discount,For any Help Click on "Contact Admin" button 🔘';
                  const fullMsg = `${header}\n${body}\n\n${welcomeMsg}`;
@@ -2724,13 +2731,20 @@ export default {
              } else {
                const today = getCurrentDate(env.TZ || 'Asia/Kolkata');
                const stats = await getJSON<DayStats>(env.STATE, `stats:daily:${today}`, { total: 0, users: {} });
-               const entries = Object.entries(stats.users).map(([uid, s]) => ({ uid, cnt: s.cnt, correct: s.correct }));
-               entries.sort((a, b) => b.cnt - a.cnt || b.correct - a.correct);
+               const entries = Object.entries(stats.users).map(([uid, s]) => ({ 
+                 uid, 
+                 cnt: s.cnt, 
+                 correct: s.correct,
+                 accuracy: s.cnt > 0 ? Math.round((s.correct / s.cnt) * 100) : 0
+               }));
+               // Sort by accuracy first, then by attempts as tiebreaker
+               entries.sort((a, b) => b.accuracy - a.accuracy || b.cnt - a.cnt);
                const userIndex = entries.findIndex(e => e.uid === String(userId));
                const rank = userIndex >= 0 ? userIndex + 1 : '—';
                const me = stats.users[String(userId)] || { cnt: 0, correct: 0 };
-               const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
-               const header = `🏆 Daily Rank (${today})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
+               const myAccuracy = me.cnt > 0 ? Math.round((me.correct / me.cnt) * 100) : 0;
+               const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.accuracy}% (${e.correct}/${e.cnt})`);
+               const header = `🏆 Daily Rank (${today})\nYour Rank: ${rank}\nYour Stats: ${myAccuracy}% accuracy (${me.correct}/${me.cnt})\n\nTop 10:`;
                const body = top.length ? top.join('\n') : 'No activity yet.';
               const kb = { inline_keyboard: [
                 [{ text: 'Get Code', callback_data: 'coupon:copy' }],
@@ -2747,13 +2761,20 @@ export default {
                try {
                  const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
                  const stats = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
-                 const entries = Object.entries(stats.users).map(([uid, s]) => ({ uid, cnt: s.cnt, correct: s.correct }));
-                 entries.sort((a, b) => b.cnt - a.cnt || b.correct - a.correct);
+                 const entries = Object.entries(stats.users).map(([uid, s]) => ({ 
+                   uid, 
+                   cnt: s.cnt, 
+                   correct: s.correct,
+                   accuracy: s.cnt > 0 ? Math.round((s.correct / s.cnt) * 100) : 0
+                 }));
+                 // Sort by accuracy first, then by attempts as tiebreaker
+                 entries.sort((a, b) => b.accuracy - a.accuracy || b.cnt - a.cnt);
                  const userIndex = entries.findIndex(e => e.uid === String(userId));
                  const rank = userIndex >= 0 ? userIndex + 1 : '—';
                  const me = stats.users[String(userId)] || { cnt: 0, correct: 0 };
-                 const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
-                 const header = `🏅 Monthly Rank (${month})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
+                 const myAccuracy = me.cnt > 0 ? Math.round((me.correct / me.cnt) * 100) : 0;
+                 const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.accuracy}% (${e.correct}/${e.cnt})`);
+                 const header = `🏅 Monthly Rank (${month})\nYour Rank: ${rank}\nYour Stats: ${myAccuracy}% accuracy (${me.correct}/${me.cnt})\n\nTop 10:`;
                  const body = top.length ? top.join('\n') : 'No activity yet.';
                  const welcomeMsg = 'Here for discount coupons? Click on "Get Code" button below and select Prepladder, Marrow, Cerebellum or any other discount coupons available in the market.You will get guaranteed discount,For any Help Click on "Contact Admin" button 🔘';
                  const fullMsg = `${header}\n${body}\n\n${welcomeMsg}`;
@@ -2773,13 +2794,20 @@ export default {
              } else {
                const month = getCurrentMonth(env.TZ || 'Asia/Kolkata');
                const stats = await getJSON<DayStats>(env.STATE, `stats:monthly:${month}`, { total: 0, users: {} });
-               const entries = Object.entries(stats.users).map(([uid, s]) => ({ uid, cnt: s.cnt, correct: s.correct }));
-               entries.sort((a, b) => b.cnt - a.cnt || b.correct - a.correct);
+               const entries = Object.entries(stats.users).map(([uid, s]) => ({ 
+                 uid, 
+                 cnt: s.cnt, 
+                 correct: s.correct,
+                 accuracy: s.cnt > 0 ? Math.round((s.correct / s.cnt) * 100) : 0
+               }));
+               // Sort by accuracy first, then by attempts as tiebreaker
+               entries.sort((a, b) => b.accuracy - a.accuracy || b.cnt - a.cnt);
                const userIndex = entries.findIndex(e => e.uid === String(userId));
                const rank = userIndex >= 0 ? userIndex + 1 : '—';
                const me = stats.users[String(userId)] || { cnt: 0, correct: 0 };
-               const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.cnt} (${e.correct}✓)`);
-               const header = `🏅 Monthly Rank (${month})\nYour Rank: ${rank}\nYour Stats: ${me.cnt} attempted, ${me.correct} correct\n\nTop 10:`;
+               const myAccuracy = me.cnt > 0 ? Math.round((me.correct / me.cnt) * 100) : 0;
+               const top = entries.slice(0, 10).map((e, i) => `${i + 1}. ${e.uid === String(userId) ? 'You' : e.uid}: ${e.accuracy}% (${e.correct}/${e.cnt})`);
+               const header = `🏅 Monthly Rank (${month})\nYour Rank: ${rank}\nYour Stats: ${myAccuracy}% accuracy (${me.correct}/${me.cnt})\n\nTop 10:`;
                const body = top.length ? top.join('\n') : 'No activity yet.';
               const kb = { inline_keyboard: [
                 [{ text: 'Get Code', callback_data: 'coupon:copy' }],
