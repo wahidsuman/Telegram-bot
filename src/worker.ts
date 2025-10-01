@@ -2582,9 +2582,10 @@ export default {
                 // Add Latin text at the bottom
                 popupMessage += `\n\n𝐉𝐨𝐢𝐧 𝐝𝐢𝐬𝐜𝐮𝐬𝐬𝐢𝐨𝐧 𝐠𝐫𝐨𝐮𝐩 𝐟𝐨𝐫 𝐟𝐮𝐥𝐥 𝐞𝐱𝐩𝐥𝐚𝐧𝐚𝐭𝐢𝐨𝐧`;
                 
-                // Add invisible zero-width space to make each popup unique (prevents Telegram caching)
-                // This ensures popups show every time, even for repeat clicks
-                popupMessage += String.fromCharCode(8203); // Zero-width space
+                // Add invisible unique identifier using zero-width spaces to prevent Telegram caching
+                // Each click gets a unique timestamp-based pattern that's invisible to users
+                const uniqueId = Date.now().toString().split('').map(d => String.fromCharCode(8203).repeat(parseInt(d) + 1)).join('');
+                popupMessage += uniqueId;
                 
                 console.log('Sending popup:', { 
                   isCorrect, 
