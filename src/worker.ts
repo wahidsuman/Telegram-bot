@@ -258,10 +258,14 @@ async function answerCallbackQuery(token: string, queryId: string, text?: string
   const url = `https://api.telegram.org/bot${token}/answerCallbackQuery`;
   const body: any = {
     callback_query_id: queryId,
-    text: text,
-    show_alert: showAlert || false,
-    cache_time: 0  // Don't cache - allow multiple clicks on same button
+    show_alert: showAlert === true  // Explicitly check for true
   };
+  
+  // Only add text if provided (empty text causes notification instead of alert)
+  if (text && text.trim().length > 0) {
+    body.text = text;
+  }
+  
   console.log('Request body:', JSON.stringify(body));
   
   try {
