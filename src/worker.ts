@@ -3571,29 +3571,66 @@ export default {
                 ]
               };
               
-              // Post to all targets
-              let successCount = 0;
-              let errorCount = 0;
+              // Get ALL targets from bot:targets array
+              let allTargets = await getJSON<string[]>(env.STATE, 'bot:targets', []);
               
-              try {
-                await sendMessage(env.TELEGRAM_BOT_TOKEN, env.TARGET_GROUP_ID, text, { reply_markup: keyboard, parse_mode: 'HTML' });
-                successCount++;
-              } catch (error) {
-                errorCount++;
+              // Add env targets if not already in the list (but NOT discussion group)
+              if (env.TARGET_GROUP_ID && !allTargets.includes(env.TARGET_GROUP_ID) && env.TARGET_GROUP_ID !== env.TARGET_DISCUSSION_GROUP_ID) {
+                allTargets.push(env.TARGET_GROUP_ID);
+              }
+              if (env.TARGET_CHANNEL_ID && !allTargets.includes(env.TARGET_CHANNEL_ID) && env.TARGET_CHANNEL_ID !== env.TARGET_DISCUSSION_GROUP_ID) {
+                allTargets.push(env.TARGET_CHANNEL_ID);
               }
               
-              if (env.TARGET_CHANNEL_ID) {
+              // Remove discussion group from regular targets if it's there
+              if (env.TARGET_DISCUSSION_GROUP_ID) {
+                allTargets = allTargets.filter(id => id !== env.TARGET_DISCUSSION_GROUP_ID);
+              }
+              
+              // Save updated targets
+              await putJSON(env.STATE, 'bot:targets', allTargets);
+              
+              // Post to all targets and store message IDs
+              let successCount = 0;
+              let errorCount = 0;
+              const messageIds: { [chatId: string]: number } = {};
+              
+              console.log(`Posting MCQ #${idx + 1} to ${allTargets.length} targets (excluding discussion group: ${env.TARGET_DISCUSSION_GROUP_ID})`);
+              console.log(`Targets for MCQ: ${allTargets.join(', ')}`);
+              
+              for (const targetId of allTargets) {
+                // Skip discussion group for MCQs
+                if (env.TARGET_DISCUSSION_GROUP_ID && targetId === env.TARGET_DISCUSSION_GROUP_ID) {
+                  console.log(`⏭️ Skipping MCQ for discussion group: ${targetId}`);
+                  continue;
+                }
+                
                 try {
-                  await sendMessage(env.TELEGRAM_BOT_TOKEN, env.TARGET_CHANNEL_ID, text, { reply_markup: keyboard, parse_mode: 'HTML' });
+                  const result = await sendMessage(env.TELEGRAM_BOT_TOKEN, targetId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
+                  
+                  // Store the message ID
+                  if (result && result.message_id) {
+                    messageIds[targetId] = result.message_id;
+                  }
+                  
+                  console.log(`✅ MCQ posted to: ${targetId}, message ID: ${result?.message_id}`);
                   successCount++;
                 } catch (error) {
+                  console.error(`❌ Failed to post MCQ to ${targetId}:`, error);
                   errorCount++;
                 }
               }
               
-              // POST EXPLANATION TO DISCUSSION GROUP
+              // Store message IDs for this question so stats can be updated
+              if (Object.keys(messageIds).length > 0) {
+                const messageIdsKey = `qmsg:${idx}`;
+                await putJSON(env.STATE, messageIdsKey, messageIds);
+                console.log(`Stored message IDs for question ${idx}:`, messageIds);
+              }
+              
+              // POST EXPLANATION TO DISCUSSION GROUP ONLY
               if (env.TARGET_DISCUSSION_GROUP_ID && question.explanation && question.explanation.trim() !== '') {
-                console.log(`Posting explanation to discussion group: ${env.TARGET_DISCUSSION_GROUP_ID}`);
+                console.log(`Posting explanation ONLY to discussion group: ${env.TARGET_DISCUSSION_GROUP_ID}`);
                 const explanationText = `📚 <b>Question ${idx + 1} - Explanation</b>\n\n${question.explanation}`;
                 
                 try {
@@ -3603,6 +3640,8 @@ export default {
                   console.error(`❌ Failed to post explanation to discussion group:`, error);
                 }
               }
+              
+              console.log(`✅ Posting complete: MCQs to ${allTargets.length} targets, Explanation to discussion group`);
               
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `📤 **Question #${idx + 1} posted successfully!**\n\n✅ **Posted to:** ${successCount} targets\n❌ **Failed:** ${errorCount} targets\n\n**Question:** ${truncate(question.question, 100)}...`);
             } else {
