@@ -1250,8 +1250,7 @@ async function updateQuestionMessages(
   // Add statistics if there are answers
   if (stats.total > 0) {
     const totalText = stats.total >= 1000 ? `${Math.floor(stats.total / 1000)}K` : stats.total.toString();
-    text += `📊 <b>${totalText} answers</b>\n`;
-    text += `A: ${percentages.A}% | B: ${percentages.B}% | C: ${percentages.C}% | D: ${percentages.D}%\n\n`;
+    text += `📊 <b>${totalText} answers</b>\n\n`;
   }
   
   text += `⬅️ Text Here For Any Query`;
@@ -2550,14 +2549,57 @@ export default {
                 
                 const isCorrect = answer === question.answer;
                 
-                // Build popup message with explanation - ORIGINAL LOGIC, NO STATS IN POPUP
+                // Fetch stats before building popup
+                let finalStats: QuestionStats;
+
+                try {
+                  // Update stats - MUST await to ensure data is saved
+                  await incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata');
+                  console.log('Stats updated successfully for user:', userId, 'question:', qid, 'correct:', isCorrect);
+
+                  // Update question answer statistics
+                  const updatedStats = await updateQuestionStats(env.STATE, qid, userId, answer);
+
+                  if (updatedStats) {
+                    finalStats = updatedStats;
+                    console.log('Question stats updated:', { qid, answer, total: updatedStats.total });
+
+                    // Check if we should update the message
+                    if (shouldUpdateMessage(updatedStats)) {
+                      // Get message IDs for this question
+                      const messageIdsKey = `qmsg:${qid}`;
+                      const messageIds = await getJSON<{ [chatId: string]: number }>(env.STATE, messageIdsKey, {});
+
+                      if (Object.keys(messageIds).length > 0) {
+                        // Update messages with new statistics (do not block)
+                        updateQuestionMessages(env.TELEGRAM_BOT_TOKEN, env.STATE, qid, question, updatedStats, messageIds).catch(err => {
+                          console.error(`Background message update failed:`, err);
+                        });
+                      }
+                    }
+                  } else {
+                    console.log('User already answered this question, stats not updated');
+                    finalStats = await getQuestionStats(env.STATE, qid);
+                  }
+                } catch (err) {
+                  console.error('CRITICAL: Stats update failed:', err);
+                  finalStats = await getQuestionStats(env.STATE, qid);
+                }
+
+                // Build popup message with explanation and stats
                 let popupMessage = isCorrect 
                   ? `✅ Correct!\n\nAnswer: ${question.answer}`
                   : `❌ Wrong!\n\nAnswer: ${question.answer}`;
                 
+                const percentages = calculatePercentages(finalStats);
+                popupMessage += `\n\n📊 A: ${percentages.A}% | B: ${percentages.B}% | C: ${percentages.C}% | D: ${percentages.D}%`;
+
+                const latinText = `\n\n𝐉𝐨𝐢𝐧 𝐝𝐢𝐬𝐜𝐮𝐬𝐬𝐢𝐨𝐧 𝐠𝐫𝐨𝐮𝐩 𝐟𝐨𝐫 𝐟𝐮𝐥𝐥 𝐞𝐱𝐩𝐥𝐚𝐧𝐚𝐭𝐢𝐨𝐧`;
+
                 // Add truncated explanation if available
                 if (question.explanation) {
-                  const remainingChars = 150 - popupMessage.length; // Same as original
+                  const currentLength = popupMessage.length + latinText.length;
+                  const remainingChars = 190 - currentLength; // Keep it under 200 limit
                   if (remainingChars > 20) {
                     let truncatedExplanation = question.explanation;
                     if (truncatedExplanation.length > remainingChars) {
@@ -2568,7 +2610,7 @@ export default {
                 }
                 
                 // Add Latin text at the bottom
-                popupMessage += `\n\n𝐉𝐨𝐢𝐧 𝐝𝐢𝐬𝐜𝐮𝐬𝐬𝐢𝐨𝐧 𝐠𝐫𝐨𝐮𝐩 𝐟𝐨𝐫 𝐟𝐮𝐥𝐥 𝐞𝐱𝐩𝐥𝐚𝐧𝐚𝐭𝐢𝐨𝐧`;
+                popupMessage += latinText;
                 
                 console.log('Sending popup:', { 
                   isCorrect, 
@@ -2588,43 +2630,6 @@ export default {
                     messageLength: popupMessage.length,
                     userId,
                     answer
-                  });
-                }
-                
-                // Update stats - MUST await to ensure data is saved
-                try {
-                  await incrementStatsFirstAttemptOnly(env.STATE, userId, qid, isCorrect, env.TZ || 'Asia/Kolkata');
-                  console.log('Stats updated successfully for user:', userId, 'question:', qid, 'correct:', isCorrect);
-                  
-                  // Update question answer statistics
-                  const updatedStats = await updateQuestionStats(env.STATE, qid, userId, answer);
-                  
-                  if (updatedStats) {
-                    console.log('Question stats updated:', { qid, answer, total: updatedStats.total });
-                    
-                    // Check if we should update the message
-                    if (shouldUpdateMessage(updatedStats)) {
-                      // Get message IDs for this question
-                      const messageIdsKey = `qmsg:${qid}`;
-                      const messageIds = await getJSON<{ [chatId: string]: number }>(env.STATE, messageIdsKey, {});
-                      
-                      if (Object.keys(messageIds).length > 0) {
-                        // Update messages with new statistics
-                        await updateQuestionMessages(env.TELEGRAM_BOT_TOKEN, env.STATE, qid, question, updatedStats, messageIds);
-                      }
-                    }
-                  } else {
-                    console.log('User already answered this question, stats not updated');
-                  }
-                } catch (err) {
-                  console.error('CRITICAL: Stats update failed:', err);
-                  // Log the error details for debugging
-                  console.error('Failed stats update details:', {
-                    userId,
-                    qid,
-                    isCorrect,
-                    timezone: env.TZ || 'Asia/Kolkata',
-                    error: err
                   });
                 }
                   
