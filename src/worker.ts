@@ -1110,7 +1110,8 @@ function buildAdminPanelKeyboard(stopButtonText: string, showScheduleOptions: bo
     [{ text: '🔍 Check Specific Question', callback_data: 'admin:checkQuestion' }],
     [{ text: '🎯 Jump to Question', callback_data: 'admin:jumpToQuestion' }],
     [{ text: '🎯 Manage Discount Buttons', callback_data: 'admin:manageDiscounts' }],
-    [{ text: '🔧 Check User Stats', callback_data: 'admin:checkUserStats' }]
+    [{ text: '🔧 Check User Stats', callback_data: 'admin:checkUserStats' }],
+    [{ text: '🧹 Wipe All Stats', callback_data: 'admin:wipeStats:init' }]
   );
 
   return { inline_keyboard: keyboard };
@@ -1809,30 +1810,23 @@ export default {
           
           // Wipe all stats command
           if (message.text === '/wipeallstats' && isAdminForTests) {
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '🧹 Wiping all stats... This may take a moment.');
+            // Set initial state for background wipe
+            const state = {
+              prefixes: ['stats:', 'seen:', 'qstats:', 'qanswers:'],
+              currentPrefixIndex: 0,
+              cursor: undefined as string | undefined,
+              deletedCount: 0
+            };
+            await putJSON(env.STATE, 'admin:wipeStatsState', state);
 
-            try {
-              let deletedCount = 0;
-              const prefixes = ['stats:', 'seen:', 'qstats:', 'qanswers:'];
+            const keyboard = {
+              inline_keyboard: [
+                [{ text: '🔄 Start Wiping (0 deleted)', callback_data: 'admin:wipeStats:continue' }],
+                [{ text: '✖️ Cancel', callback_data: 'admin:wipeStats:cancel' }]
+              ]
+            };
 
-              for (const prefix of prefixes) {
-                let cursor: string | undefined;
-                do {
-                  const list = await env.STATE.list({ prefix, cursor });
-                  cursor = list.list_complete ? undefined : list.cursor;
-
-                  // Delete keys in batches (Cloudflare Workers KV doesn't have a bulk delete, so we loop)
-                  for (const key of list.keys) {
-                    await env.STATE.delete(key.name);
-                    deletedCount++;
-                  }
-                } while (cursor);
-              }
-
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Successfully wiped all stats.\nDeleted ${deletedCount} records.`);
-            } catch (error) {
-              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Failed to wipe stats: ${error instanceof Error ? error.message : String(error)}`);
-            }
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '🧹 **Wipe All Stats**\n\nClick the button below to incrementally delete all statistics. This may require multiple clicks depending on how many stats exist.', { parse_mode: 'Markdown', reply_markup: keyboard });
             return new Response('OK');
           }
 
@@ -3372,6 +3366,107 @@ export default {
               await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, message, { reply_markup: keyboard });
             }
 
+          } else if (data.startsWith('admin:wipeStats:')) {
+            const action = data.split(':')[2];
+
+            // Re-calculate isAdmin inside callback scope since isAdminForTests is defined in message handler scope
+            const chatIdForAuth = query.message?.chat.id || query.from.id;
+            const isAdminForWipe = chatIdForAuth.toString() === env.ADMIN_CHAT_ID ||
+              (env.ADMIN_USERNAME && query.from?.username &&
+               query.from.username.toLowerCase() === env.ADMIN_USERNAME.toLowerCase());
+
+            // Only allow admins to wipe stats
+            if (!isAdminForWipe) {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Unauthorized');
+              return new Response('OK');
+            }
+
+            if (action === 'init') {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '🧹 Initializing wipe...');
+
+              // Set initial state
+              const state = {
+                prefixes: ['stats:', 'seen:', 'qstats:', 'qanswers:'],
+                currentPrefixIndex: 0,
+                cursor: undefined as string | undefined,
+                deletedCount: 0
+              };
+              await putJSON(env.STATE, 'admin:wipeStatsState', state);
+
+              const keyboard = {
+                inline_keyboard: [
+                  [{ text: '🔄 Start Wiping (0 deleted)', callback_data: 'admin:wipeStats:continue' }],
+                  [{ text: '✖️ Cancel', callback_data: 'admin:wipeStats:cancel' }]
+                ]
+              };
+
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '🧹 **Wipe All Stats**\n\nClick the button below to incrementally delete all statistics. This may require multiple clicks depending on how many stats exist.', { parse_mode: 'Markdown', reply_markup: keyboard });
+            } else if (action === 'continue') {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '🗑️ Deleting a batch...');
+
+              const state = await getJSON<any>(env.STATE, 'admin:wipeStatsState', null);
+              if (!state) {
+                await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, '❌ Wipe state lost. Please start over.');
+                return new Response('OK');
+              }
+
+              let { prefixes, currentPrefixIndex, cursor, deletedCount } = state;
+              let batchDeleted = 0;
+              const BATCH_LIMIT = 50; // Keep it low to avoid 1000 subrequests limit (list + deletes)
+
+              let done = false;
+
+              while (batchDeleted < BATCH_LIMIT && currentPrefixIndex < prefixes.length) {
+                const prefix = prefixes[currentPrefixIndex];
+                const list = await env.STATE.list({ prefix, cursor, limit: BATCH_LIMIT - batchDeleted });
+
+                for (const key of list.keys) {
+                  await env.STATE.delete(key.name);
+                  batchDeleted++;
+                  deletedCount++;
+                }
+
+                if (list.list_complete) {
+                  currentPrefixIndex++;
+                  cursor = undefined;
+                } else {
+                  cursor = list.cursor;
+                  break; // Need to continue with this prefix in the next run
+                }
+              }
+
+              if (currentPrefixIndex >= prefixes.length) {
+                done = true;
+              } else {
+                // Save updated state
+                await putJSON(env.STATE, 'admin:wipeStatsState', { prefixes, currentPrefixIndex, cursor, deletedCount });
+              }
+
+              if (done) {
+                await env.STATE.delete('admin:wipeStatsState');
+                if (query.message?.message_id) {
+                  await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId!, query.message.message_id, `✅ **Successfully wiped all stats.**\n\nTotal records deleted: ${deletedCount}`, { parse_mode: 'Markdown' });
+                } else {
+                  await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId!, `✅ **Successfully wiped all stats.**\n\nTotal records deleted: ${deletedCount}`, { parse_mode: 'Markdown' });
+                }
+              } else {
+                const keyboard = {
+                  inline_keyboard: [
+                    [{ text: `🔄 Continue Wiping (${deletedCount} deleted so far)`, callback_data: 'admin:wipeStats:continue' }],
+                    [{ text: '✖️ Cancel', callback_data: 'admin:wipeStats:cancel' }]
+                  ]
+                };
+                if (query.message?.message_id) {
+                  await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId!, query.message.message_id, `🧹 **Wipe All Stats**\n\nIncremental wipe in progress...\nRecords deleted: ${deletedCount}\nPrefix being processed: \`${prefixes[currentPrefixIndex]}\``, { parse_mode: 'Markdown', reply_markup: keyboard });
+                }
+              }
+            } else if (action === 'cancel') {
+              await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id, '❌ Cancelled');
+              await env.STATE.delete('admin:wipeStatsState');
+              if (query.message?.message_id) {
+                await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId!, query.message.message_id, '❌ **Wipe cancelled.**', { parse_mode: 'Markdown' });
+              }
+            }
           } else if (data === 'admin:jumpToQuestion') {
             await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, query.id);
             
