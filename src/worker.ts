@@ -1180,7 +1180,6 @@ async function updateQuestionStats(kv: KVNamespace, questionId: number, userId: 
   // Update counts
   stats[answer as keyof Pick<QuestionStats, 'A' | 'B' | 'C' | 'D'>]++;
   stats.total++;
-  stats.lastUpdated = Date.now();
   
   // Save both stats and user answers
   await Promise.all([
@@ -1808,6 +1807,35 @@ export default {
             return new Response('OK');
           }
           
+          // Wipe all stats command
+          if (message.text === '/wipeallstats' && isAdminForTests) {
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, '🧹 Wiping all stats... This may take a moment.');
+
+            try {
+              let deletedCount = 0;
+              const prefixes = ['stats:', 'seen:', 'qstats:', 'qanswers:'];
+
+              for (const prefix of prefixes) {
+                let cursor: string | undefined;
+                do {
+                  const list = await env.STATE.list({ prefix, cursor });
+                  cursor = list.list_complete ? undefined : list.cursor;
+
+                  // Delete keys in batches (Cloudflare Workers KV doesn't have a bulk delete, so we loop)
+                  for (const key of list.keys) {
+                    await env.STATE.delete(key.name);
+                    deletedCount++;
+                  }
+                } while (cursor);
+              }
+
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `✅ Successfully wiped all stats.\nDeleted ${deletedCount} records.`);
+            } catch (error) {
+              await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `❌ Failed to wipe stats: ${error instanceof Error ? error.message : String(error)}`);
+            }
+            return new Response('OK');
+          }
+
           // Handle /groupid command to help identify discussion group
           if (message.text === '/groupid') {
             const groupInfo = `📍 Chat Information:\n\n` +
@@ -2571,6 +2599,11 @@ export default {
                       const messageIds = await getJSON<{ [chatId: string]: number }>(env.STATE, messageIdsKey, {});
 
                       if (Object.keys(messageIds).length > 0) {
+                        // Update lastUpdated timestamp so we don't spam Telegram
+                        updatedStats.lastUpdated = Date.now();
+                        // Save the new timestamp back to KV (don't block the request)
+                        putJSON(env.STATE, `qstats:${qid}`, updatedStats).catch(console.error);
+
                         // Update messages with new statistics (do not block)
                         updateQuestionMessages(env.TELEGRAM_BOT_TOKEN, env.STATE, qid, question, updatedStats, messageIds).catch(err => {
                           console.error(`Background message update failed:`, err);
